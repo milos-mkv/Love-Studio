@@ -1,0 +1,521 @@
+[
+  {
+    "id": "window-set-mode",
+    "title": "Set Window Mode",
+    "category": "window",
+    "description": "Configure the window size, fullscreen state, and resizable behavior.",
+    "code": "function love.load()\n    love.window.setMode(1280, 720, {\n        resizable = true,\n        minwidth = 640,\n        minheight = 360,\n        vsync = 1\n    })\nend\n",
+    "tags": ["window", "setMode", "resize"]
+  },
+  {
+    "id": "window-title",
+    "title": "Set Window Title",
+    "category": "window",
+    "description": "Set the game window title during startup.",
+    "code": "function love.load()\n    love.window.setTitle(\"My LOVE Game\")\nend\n",
+    "tags": ["window", "title"]
+  },
+  {
+    "id": "graphics-background",
+    "title": "Background Clear Color",
+    "category": "graphics",
+    "description": "Set a custom background color every frame before drawing.",
+    "code": "function love.draw()\n    love.graphics.clear(0.08, 0.09, 0.12)\n\n    -- draw your scene here\nend\n",
+    "tags": ["graphics", "clear", "background"]
+  },
+  {
+    "id": "graphics-image",
+    "title": "Load and Draw Image",
+    "category": "graphics",
+    "description": "Load an image in love.load and draw it in love.draw.",
+    "code": "local playerSprite\n\nfunction love.load()\n    playerSprite = love.graphics.newImage(\"assets/player.png\")\nend\n\nfunction love.draw()\n    love.graphics.draw(playerSprite, 100, 100)\nend\n",
+    "tags": ["graphics", "image", "draw"]
+  },
+  {
+    "id": "input-keypressed",
+    "title": "Key Press Handler",
+    "category": "input",
+    "description": "React to single key presses with love.keypressed.",
+    "code": "function love.keypressed(key)\n    if key == \"escape\" then\n        love.event.quit()\n    elseif key == \"space\" then\n        print(\"Jump!\")\n    end\nend\n",
+    "tags": ["input", "keyboard", "events"]
+  },
+  {
+    "id": "input-mouse",
+    "title": "Mouse Press Handler",
+    "category": "input",
+    "description": "Handle mouse clicks with coordinates and button info.",
+    "code": "function love.mousepressed(x, y, button)\n    if button == 1 then\n        print(\"Left click at\", x, y)\n    end\nend\n",
+    "tags": ["input", "mouse"]
+  },
+  {
+    "id": "audio-source",
+    "title": "Play Sound Effect",
+    "category": "audio",
+    "description": "Load a short sound effect and play it on demand.",
+    "code": "local hitSound\n\nfunction love.load()\n    hitSound = love.audio.newSource(\"assets/hit.wav\", \"static\")\nend\n\nfunction love.keypressed(key)\n    if key == \"h\" then\n        hitSound:stop()\n        hitSound:play()\n    end\nend\n",
+    "tags": ["audio", "sound", "static"]
+  },
+  {
+    "id": "audio-music",
+    "title": "Loop Background Music",
+    "category": "audio",
+    "description": "Start looping background music when the game loads.",
+    "code": "local music\n\nfunction love.load()\n    music = love.audio.newSource(\"assets/music.ogg\", \"stream\")\n    music:setLooping(true)\n    music:play()\nend\n",
+    "tags": ["audio", "music", "stream"]
+  },
+  {
+    "id": "physics-world",
+    "title": "Create Physics World",
+    "category": "physics",
+    "description": "Initialize a Box2D world with gravity and update it every frame.",
+    "code": "local world\n\nfunction love.load()\n    love.physics.setMeter(64)\n    world = love.physics.newWorld(0, 9.81 * 64, true)\nend\n\nfunction love.update(dt)\n    world:update(dt)\nend\n",
+    "tags": ["physics", "world", "gravity"]
+  },
+  {
+    "id": "physics-body",
+    "title": "Dynamic Rectangle Body",
+    "category": "physics",
+    "description": "Create a simple dynamic rectangle body with a fixture.",
+    "code": "local world\nlocal body\nlocal shape\nlocal fixture\n\nfunction love.load()\n    love.physics.setMeter(64)\n    world = love.physics.newWorld(0, 9.81 * 64, true)\n\n    body = love.physics.newBody(world, 200, 120, \"dynamic\")\n    shape = love.physics.newRectangleShape(32, 32)\n    fixture = love.physics.newFixture(body, shape, 1)\nend\n",
+    "tags": ["physics", "body", "fixture"]
+  },
+  {
+    "id": "filesystem-save",
+    "title": "Save JSON-like Data",
+    "category": "filesystem",
+    "description": "Write a small save file into LÖVE's save directory.",
+    "code": "local saveData = \"score=120\\ncoins=5\\n\"\nlove.filesystem.write(\"savegame.txt\", saveData)\n",
+    "tags": ["filesystem", "save", "write"]
+  },
+  {
+    "id": "filesystem-load",
+    "title": "Read Save File",
+    "category": "filesystem",
+    "description": "Load a text file from LÖVE's save directory if it exists.",
+    "code": "if love.filesystem.getInfo(\"savegame.txt\") then\n    local contents = love.filesystem.read(\"savegame.txt\")\n    print(contents)\nend\n",
+    "tags": ["filesystem", "load", "read"]
+  },
+  {
+    "id": "gameplay-statemachine",
+    "title": "State Machine",
+    "category": "gameplay",
+    "description": "A minimal state machine for managing game scenes (Menu, Game, Pause, etc.). Save as StateMachine.lua.",
+    "code": "-- StateMachine.lua\n-- Usage:\n--   local SM = require(\"StateMachine\")\n--   local states = SM.new({ menu = MenuState.new(), game = GameState.new() })\n--   states:change(\"menu\")\n--   -- in love.update(dt): states:update(dt)\n--   -- in love.draw():    states:draw()\n\nlocal StateMachine = {}\nStateMachine.__index = StateMachine\n\nfunction StateMachine.new(states)\n    return setmetatable({\n        states  = states or {},\n        current = nil,\n    }, StateMachine)\nend\n\n-- Switch to a named state. Calls :enter(...) on the new state if it exists.\nfunction StateMachine:change(name, ...)\n    if self.current and self.current.exit then\n        self.current:exit()\n    end\n    self.current = self.states[name]\n    if self.current and self.current.enter then\n        self.current:enter(...)\n    end\nend\n\nfunction StateMachine:update(dt)\n    if self.current and self.current.update then\n        self.current:update(dt)\n    end\nend\n\nfunction StateMachine:draw()\n    if self.current and self.current.draw then\n        self.current:draw()\n    end\nend\n\nfunction StateMachine:keypressed(key)\n    if self.current and self.current.keypressed then\n        self.current:keypressed(key)\n    end\nend\n\nreturn StateMachine\n",
+    "tags": ["gameplay", "statemachine", "scenes", "states"]
+  },
+  {
+    "id": "gameplay-scene-template",
+    "title": "Scene State Template",
+    "category": "gameplay",
+    "description": "A single scene/state template to use with StateMachine. Copy and rename for each screen (MenuState, GameState, PauseState, etc.).",
+    "code": "-- GameState.lua  (rename as needed: MenuState, PauseState, GameOverState …)\n-- Usage with StateMachine:\n--   local GameState = require(\"states/GameState\")\n--   states = SM.new({ game = GameState.new() })\n--   states:change(\"game\")\n\nlocal GameState = {}\nGameState.__index = GameState\n\nfunction GameState.new()\n    return setmetatable({}, GameState)\nend\n\n-- Called when this state becomes active.\nfunction GameState:enter()\nend\n\n-- Called when switching away from this state.\nfunction GameState:exit()\nend\n\nfunction GameState:update(dt)\nend\n\nfunction GameState:draw()\n    love.graphics.print(\"Game State\", 24, 24)\nend\n\nfunction GameState:keypressed(key)\n    if key == \"escape\" then\n        -- example: switch to pause\n        -- gameStates:change(\"pause\")\n    end\nend\n\nreturn GameState\n",
+    "tags": ["gameplay", "scene", "state", "template"]
+  },
+  {
+    "id": "gameplay-scene-bootstrap",
+    "title": "Scene Bootstrap (main.lua)",
+    "category": "gameplay",
+    "description": "Wires StateMachine + multiple scene states in main.lua. Assumes StateMachine.lua and states/MenuState.lua, states/GameState.lua etc. are present.",
+    "code": "-- main.lua — scene bootstrap\nlocal StateMachine = require(\"StateMachine\")\nlocal MenuState    = require(\"states/MenuState\")\nlocal GameState    = require(\"states/GameState\")\nlocal PauseState   = require(\"states/PauseState\")\nlocal GameOverState = require(\"states/GameOverState\")\n\nlocal gameStates\n\nfunction love.load()\n    gameStates = StateMachine.new({\n        menu     = MenuState.new(),\n        game     = GameState.new(),\n        pause    = PauseState.new(),\n        gameover = GameOverState.new(),\n    })\n    gameStates:change(\"menu\")\nend\n\nfunction love.update(dt)\n    gameStates:update(dt)\nend\n\nfunction love.draw()\n    gameStates:draw()\nend\n\nfunction love.keypressed(key)\n    gameStates:keypressed(key)\nend\n",
+    "tags": ["gameplay", "statemachine", "bootstrap", "main"]
+  },
+  {
+    "id": "gameplay-entity",
+    "title": "Entity Template",
+    "category": "gameplay",
+    "description": "A reusable OOP entity base. Copy and rename for Player, Enemy, Bullet, etc.",
+    "code": "-- Player.lua  (rename as needed: Enemy, Bullet …)\n-- Usage:\n--   local Player = require(\"entities/Player\")\n--   local player = Player.new(100, 200)\n--   -- in update: player:update(dt)\n--   -- in draw:   player:draw()\n\nlocal Player = {}\nPlayer.__index = Player\n\nfunction Player.new(x, y)\n    local self = setmetatable({}, Player)\n    self.x     = x or 0\n    self.y     = y or 0\n    self.speed = 140\n    -- self.sprite = love.graphics.newImage(\"images/player.png\")\n    return self\nend\n\nfunction Player:update(dt)\n    if love.keyboard.isDown(\"left\",  \"a\") then self.x = self.x - self.speed * dt end\n    if love.keyboard.isDown(\"right\", \"d\") then self.x = self.x + self.speed * dt end\n    if love.keyboard.isDown(\"up\",    \"w\") then self.y = self.y - self.speed * dt end\n    if love.keyboard.isDown(\"down\",  \"s\") then self.y = self.y + self.speed * dt end\nend\n\nfunction Player:draw()\n    -- love.graphics.draw(self.sprite, self.x, self.y)\n    love.graphics.rectangle(\"line\", self.x, self.y, 16, 16)\nend\n\nreturn Player\n",
+    "tags": ["gameplay", "entity", "player", "oop"]
+  },
+  {
+    "id": "gameplay-camera",
+    "title": "Camera",
+    "category": "gameplay",
+    "description": "A simple 2D camera with smooth lerp follow. Save as entities/Camera.lua.",
+    "code": "-- Camera.lua\n-- Usage:\n--   local Camera = require(\"entities/Camera\")\n--   local cam = Camera.new()\n--   -- in update: cam:follow(player, 0.1)\n--   -- in draw:   cam:attach() ... draw world ... cam:detach()\n\nlocal Camera = {}\nCamera.__index = Camera\n\nfunction Camera.new()\n    return setmetatable({ x = 0, y = 0, zoom = 1 }, Camera)\nend\n\n-- Smoothly move camera toward target (any table with .x and .y).\n-- lerp: 0 = never moves, 1 = instant snap (default 0.12)\nfunction Camera:follow(target, lerp)\n    lerp    = lerp or 0.12\n    self.x  = self.x + (target.x - self.x) * lerp\n    self.y  = self.y + (target.y - self.y) * lerp\nend\n\n-- Call before drawing world geometry.\nfunction Camera:attach()\n    local hw = love.graphics.getWidth()  / 2\n    local hh = love.graphics.getHeight() / 2\n    love.graphics.push()\n    love.graphics.scale(self.zoom)\n    love.graphics.translate(\n        -math.floor(self.x - hw / self.zoom),\n        -math.floor(self.y - hh / self.zoom)\n    )\nend\n\n-- Call after drawing world geometry.\nfunction Camera:detach()\n    love.graphics.pop()\nend\n\nreturn Camera\n",
+    "tags": ["gameplay", "camera", "follow", "scroll"]
+  },
+  {
+    "id": "gameplay-input",
+    "title": "Input Manager",
+    "category": "gameplay",
+    "description": "Action-based input manager supporting both isDown() and wasPressed() (once per frame). Save as Input.lua.",
+    "code": "-- Input.lua\n-- Usage:\n--   local Input = require(\"Input\")\n--   -- forward love.keypressed to Input:\n--   function love.keypressed(key) Input.keypressed(key) end\n--   -- call at end of love.update:\n--   Input.endFrame()\n--\n--   if Input.isDown(\"move_left\")  then ... end  -- held\n--   if Input.wasPressed(\"jump\")   then ... end  -- single press\n\nlocal Input = {\n    bindings = {\n        move_left  = { \"a\", \"left\" },\n        move_right = { \"d\", \"right\" },\n        move_up    = { \"w\", \"up\" },\n        move_down  = { \"s\", \"down\" },\n        jump       = { \"space\", \"w\" },\n        shoot      = { \"j\", \"lctrl\" },\n        pause      = { \"escape\", \"p\" },\n    },\n    _pressed = {},\n}\n\nfunction Input.keypressed(key)\n    Input._pressed[key] = true\nend\n\n-- Call at the end of love.update(dt) to clear single-press state.\nfunction Input.endFrame()\n    Input._pressed = {}\nend\n\n-- True every frame while any bound key is held down.\nfunction Input.isDown(action)\n    for _, key in ipairs(Input.bindings[action] or {}) do\n        if love.keyboard.isDown(key) then return true end\n    end\n    return false\nend\n\n-- True only on the first frame a bound key was pressed.\nfunction Input.wasPressed(action)\n    for _, key in ipairs(Input.bindings[action] or {}) do\n        if Input._pressed[key] then return true end\n    end\n    return false\nend\n\nreturn Input\n",
+    "tags": ["gameplay", "input", "keyboard", "actions"]
+  },
+  {
+    "id": "gameplay-audiomanager",
+    "title": "Audio Manager",
+    "category": "gameplay",
+    "description": "Centralized audio manager for SFX and music with volume control and mute toggle. Save as AudioManager.lua.",
+    "code": "-- AudioManager.lua\n-- Usage:\n--   local Audio = require(\"AudioManager\")\n--   -- in love.load(): Audio.load()\n--   Audio.play(\"jump\")           -- play SFX\n--   Audio.play(\"game_theme\")     -- play/restart music\n--   Audio.stop(\"game_theme\")\n--   Audio.setMusicVolume(0.5)\n--   Audio.setSFXVolume(0.8)\n--   Audio.toggleMute()\n\nlocal AudioManager = {\n    musicVolume = 1,\n    sfxVolume   = 1,\n    muted       = false,\n    library = {\n        -- Add your audio files here:\n        -- name = { path = \"audio/sound.wav\", kind = \"sfx\",   loops = false, volume = 1.0 },\n        -- name = { path = \"audio/music.ogg\", kind = \"music\", loops = true,  volume = 0.8 },\n        jump       = { path = \"audio/jump.wav\",       kind = \"sfx\",   loops = false, volume = 1.0 },\n        shoot      = { path = \"audio/shoot.wav\",      kind = \"sfx\",   loops = false, volume = 1.0 },\n        menu_theme = { path = \"audio/menu_theme.ogg\", kind = \"music\", loops = true,  volume = 0.8 },\n        game_theme = { path = \"audio/game_theme.ogg\", kind = \"music\", loops = true,  volume = 0.8 },\n    },\n    sources = {},\n}\n\nfunction AudioManager.load()\n    for name, item in pairs(AudioManager.library) do\n        local sourceType = item.kind == \"music\" and \"stream\" or \"static\"\n        local src = love.audio.newSource(item.path, sourceType)\n        src:setLooping(item.loops)\n        AudioManager.sources[name] = src\n    end\n    AudioManager._refreshVolumes()\nend\n\nfunction AudioManager._refreshVolumes()\n    for name, src in pairs(AudioManager.sources) do\n        local item      = AudioManager.library[name]\n        local baseVol   = item.kind == \"music\" and AudioManager.musicVolume or AudioManager.sfxVolume\n        src:setVolume(AudioManager.muted and 0 or baseVol * item.volume)\n    end\nend\n\nfunction AudioManager.play(name)\n    local src = AudioManager.sources[name]\n    if not src then return end\n    if AudioManager.library[name].kind == \"music\" then\n        src:stop()\n        src:play()\n    else\n        src:clone():play()   -- allow overlapping SFX\n    end\nend\n\nfunction AudioManager.stop(name)\n    local src = AudioManager.sources[name]\n    if src then src:stop() end\nend\n\nfunction AudioManager.setMusicVolume(v)\n    AudioManager.musicVolume = v\n    AudioManager._refreshVolumes()\nend\n\nfunction AudioManager.setSFXVolume(v)\n    AudioManager.sfxVolume = v\n    AudioManager._refreshVolumes()\nend\n\nfunction AudioManager.toggleMute()\n    AudioManager.muted = not AudioManager.muted\n    AudioManager._refreshVolumes()\nend\n\nreturn AudioManager\n",
+    "tags": ["gameplay", "audio", "music", "sfx", "volume"]
+  },
+  {
+    "id": "oop-basic-class",
+    "title": "Basic Class",
+    "category": "oop",
+    "description": "The simplest Lua class pattern using metatables. The foundation for everything else.",
+    "code": "-- Animal.lua\nlocal Animal = {}\nAnimal.__index = Animal\n\n-- Constructor\nfunction Animal.new(name, sound)\n    local self = setmetatable({}, Animal)\n    self.name  = name\n    self.sound = sound\n    return self\nend\n\n-- Method\nfunction Animal:speak()\n    print(self.name .. \" says \" .. self.sound)\nend\n\nreturn Animal\n\n-- Usage:\n-- local Animal = require(\"Animal\")\n-- local dog = Animal.new(\"Rex\", \"Woof\")\n-- dog:speak()   --> Rex says Woof\n",
+    "tags": ["oop", "class", "metatable", "new"]
+  },
+  {
+    "id": "oop-inheritance",
+    "title": "Inheritance",
+    "category": "oop",
+    "description": "Single inheritance in Lua — child class extends a parent class and can override methods.",
+    "code": "-- Base class\nlocal Shape = {}\nShape.__index = Shape\n\nfunction Shape.new(x, y)\n    return setmetatable({ x = x, y = y }, Shape)\nend\n\nfunction Shape:move(dx, dy)\n    self.x = self.x + dx\n    self.y = self.y + dy\nend\n\nfunction Shape:draw()\n    -- override in subclasses\nend\n\n-- Child class\nlocal Circle = setmetatable({}, { __index = Shape })\nCircle.__index = Circle\n\nfunction Circle.new(x, y, radius)\n    local self = Shape.new(x, y)     -- call parent constructor\n    self.radius = radius\n    return setmetatable(self, Circle)\nend\n\nfunction Circle:draw()               -- override parent method\n    love.graphics.circle(\"fill\", self.x, self.y, self.radius)\nend\n\nfunction Circle:area()\n    return math.pi * self.radius ^ 2\nend\n\nreturn Circle\n\n-- Usage:\n-- local Circle = require(\"Circle\")\n-- local c = Circle.new(100, 100, 30)\n-- c:move(10, 0)    -- inherited from Shape\n-- c:draw()         -- Circle's own draw\n",
+    "tags": ["oop", "inheritance", "extends", "metatable"]
+  },
+  {
+    "id": "oop-mixin",
+    "title": "Mixin",
+    "category": "oop",
+    "description": "Copy methods from multiple tables into a class — Lua's answer to multiple inheritance.",
+    "code": "-- Mixins are plain tables of functions\nlocal Drawable = {}\nfunction Drawable:draw()\n    love.graphics.rectangle(\"fill\", self.x, self.y, self.w, self.h)\nend\n\nlocal Collidable = {}\nfunction Collidable:collidesWith(other)\n    return self.x < other.x + other.w\n       and self.x + self.w > other.x\n       and self.y < other.y + other.h\n       and self.y + self.h > other.y\nend\n\n-- Helper: copy mixin methods into a class\nlocal function mixin(class, ...)\n    for _, m in ipairs({...}) do\n        for k, v in pairs(m) do\n            class[k] = v\n        end\n    end\nend\n\n-- Class that uses both mixins\nlocal Box = {}\nBox.__index = Box\nmixin(Box, Drawable, Collidable)\n\nfunction Box.new(x, y, w, h)\n    return setmetatable({ x=x, y=y, w=w, h=h }, Box)\nend\n\nreturn Box\n\n-- Usage:\n-- local Box = require(\"Box\")\n-- local a = Box.new(0,  0, 32, 32)\n-- local b = Box.new(20, 0, 32, 32)\n-- a:draw()\n-- print(a:collidesWith(b))  --> true\n",
+    "tags": ["oop", "mixin", "multiple", "composition"]
+  },
+  {
+    "id": "oop-class-helper",
+    "title": "Class() Helper Function",
+    "category": "oop",
+    "description": "A tiny reusable Class() helper that handles metatable boilerplate so you don't repeat it every time.",
+    "code": "-- Class.lua  — save once, use everywhere\nlocal function Class(Base)\n    local cls = {}\n    cls.__index = cls\n    if Base then\n        setmetatable(cls, { __index = Base })\n    end\n    function cls:new(...)      -- calls cls:init(...) if it exists\n        local obj = setmetatable({}, cls)\n        if obj.init then obj:init(...) end\n        return obj\n    end\n    return cls\nend\n\nreturn Class\n\n-- Usage:\n-- local Class = require(\"Class\")\n--\n-- local Animal = Class()\n-- function Animal:init(name)\n--     self.name = name\n-- end\n-- function Animal:speak() print(self.name) end\n--\n-- local Dog = Class(Animal)   -- inherits Animal\n-- function Dog:init(name)\n--     Animal.init(self, name) -- call super\n--     self.tricks = {}\n-- end\n-- function Dog:learnTrick(t) table.insert(self.tricks, t) end\n--\n-- local d = Dog:new(\"Rex\")\n-- d:speak()              --> Rex\n-- d:learnTrick(\"sit\")\n",
+    "tags": ["oop", "class", "helper", "inheritance"]
+  },
+  {
+    "id": "oop-singleton",
+    "title": "Singleton Module",
+    "category": "oop",
+    "description": "A module that has exactly one instance — useful for global managers (GameManager, EventBus, etc.).",
+    "code": "-- GameManager.lua\nlocal GameManager = {}\nGameManager.__index = GameManager\n\n-- Private single instance\nlocal _instance = nil\n\nfunction GameManager.getInstance()\n    if not _instance then\n        _instance = setmetatable({\n            score  = 0,\n            lives  = 3,\n            paused = false,\n        }, GameManager)\n    end\n    return _instance\nend\n\nfunction GameManager:addScore(points)\n    self.score = self.score + points\nend\n\nfunction GameManager:loseLife()\n    self.lives = self.lives - 1\n    return self.lives <= 0   -- returns true = game over\nend\n\nfunction GameManager:reset()\n    self.score  = 0\n    self.lives  = 3\n    self.paused = false\nend\n\nreturn GameManager\n\n-- Usage (any file):\n-- local GM = require(\"GameManager\").getInstance()\n-- GM:addScore(100)\n-- if GM:loseLife() then ... game over ... end\n",
+    "tags": ["oop", "singleton", "manager", "pattern"]
+  },
+  {
+    "id": "oop-event-emitter",
+    "title": "Event Emitter",
+    "category": "oop",
+    "description": "Observer pattern — objects subscribe to named events and get notified when they fire.",
+    "code": "-- EventEmitter.lua\nlocal EventEmitter = {}\nEventEmitter.__index = EventEmitter\n\nfunction EventEmitter.new()\n    return setmetatable({ _listeners = {} }, EventEmitter)\nend\n\nfunction EventEmitter:on(event, fn)\n    if not self._listeners[event] then\n        self._listeners[event] = {}\n    end\n    table.insert(self._listeners[event], fn)\nend\n\nfunction EventEmitter:off(event, fn)\n    local list = self._listeners[event]\n    if not list then return end\n    for i = #list, 1, -1 do\n        if list[i] == fn then table.remove(list, i) end\n    end\nend\n\nfunction EventEmitter:emit(event, ...)\n    for _, fn in ipairs(self._listeners[event] or {}) do\n        fn(...)\n    end\nend\n\nreturn EventEmitter\n\n-- Usage:\n-- local EventEmitter = require(\"EventEmitter\")\n-- local events = EventEmitter.new()\n--\n-- events:on(\"playerDied\", function(player)\n--     print(player.name .. \" died!\")\n-- end)\n--\n-- events:emit(\"playerDied\", player)   -- fires all listeners\n",
+    "tags": ["oop", "events", "observer", "pattern"]
+  },
+  {
+    "id": "oop-component",
+    "title": "Component / Entity System",
+    "category": "oop",
+    "description": "Simple composition-over-inheritance entity-component system. Attach components to entities instead of deep class trees.",
+    "code": "-- Entity.lua\nlocal Entity = {}\nEntity.__index = Entity\n\nfunction Entity.new()\n    return setmetatable({ _components = {} }, Entity)\nend\n\nfunction Entity:add(name, component)\n    self._components[name] = component\n    component.entity = self   -- back-reference\n    if component.init then component:init() end\n    return self               -- chain: e:add(\"hp\", HP.new()):add(\"sprite\", Sprite.new())\nend\n\nfunction Entity:get(name)\n    return self._components[name]\nend\n\nfunction Entity:update(dt)\n    for _, c in pairs(self._components) do\n        if c.update then c:update(dt) end\n    end\nend\n\nfunction Entity:draw()\n    for _, c in pairs(self._components) do\n        if c.draw then c:draw() end\n    end\nend\n\nreturn Entity\n\n-- Example component:\n-- local Health = {}\n-- Health.__index = Health\n-- function Health.new(max) return setmetatable({ hp = max, max = max }, Health) end\n-- function Health:takeDamage(n) self.hp = math.max(0, self.hp - n) end\n-- function Health:isDead() return self.hp <= 0 end\n",
+    "tags": ["oop", "component", "entity", "composition"]
+  },
+  {
+    "id": "oop-pool",
+    "title": "Object Pool",
+    "category": "oop",
+    "description": "Reuse objects instead of creating/GC-ing them every frame — essential for bullets, particles, and enemies.",
+    "code": "-- Pool.lua\nlocal Pool = {}\nPool.__index = Pool\n\nfunction Pool.new(Class)\n    return setmetatable({ Class = Class, free = {} }, Pool)\nend\n\nfunction Pool:get(...)\n    local obj\n    if #self.free > 0 then\n        obj = table.remove(self.free)\n        if obj.reset then obj:reset(...) end\n    else\n        obj = self.Class.new(...)\n    end\n    obj._pool = self\n    return obj\nend\n\nfunction Pool:release(obj)\n    obj._pool = nil\n    table.insert(self.free, obj)\nend\n\nreturn Pool\n\n-- Usage:\n-- local Pool   = require(\"Pool\")\n-- local Bullet = require(\"Bullet\")   -- Bullet.new() / bullet:reset(x,y)\n-- local bullets = Pool.new(Bullet)\n--\n-- local b = bullets:get(player.x, player.y)  -- borrow\n-- -- when bullet hits something:\n-- bullets:release(b)                          -- return to pool\n",
+    "tags": ["oop", "pool", "performance", "pattern"]
+  },
+
+  {
+    "id": "math-vector2",
+    "title": "Vector2",
+    "category": "math",
+    "description": "2D vector class with common operations: add, sub, scale, length, normalize, dot, distance.",
+    "code": "-- Vec2.lua\nlocal Vec2 = {}\nVec2.__index = Vec2\n\nfunction Vec2.new(x, y)\n    return setmetatable({ x = x or 0, y = y or 0 }, Vec2)\nend\n\nfunction Vec2.__add(a, b)  return Vec2.new(a.x + b.x, a.y + b.y) end\nfunction Vec2.__sub(a, b)  return Vec2.new(a.x - b.x, a.y - b.y) end\nfunction Vec2.__mul(a, s)  return Vec2.new(a.x * s,   a.y * s)   end\nfunction Vec2.__unm(a)     return Vec2.new(-a.x, -a.y)            end\nfunction Vec2.__tostring(v) return \"(\" .. v.x .. \", \" .. v.y .. \")\" end\n\nfunction Vec2:length()     return math.sqrt(self.x^2 + self.y^2) end\nfunction Vec2:lengthSq()   return self.x^2 + self.y^2            end\n\nfunction Vec2:normalize()\n    local len = self:length()\n    if len == 0 then return Vec2.new(0, 0) end\n    return Vec2.new(self.x / len, self.y / len)\nend\n\nfunction Vec2:dot(other)   return self.x * other.x + self.y * other.y end\nfunction Vec2:distance(other) return (self - other):length() end\nfunction Vec2:angle()      return math.atan2(self.y, self.x) end\nfunction Vec2:clone()      return Vec2.new(self.x, self.y)   end\n\nreturn Vec2\n\n-- Usage:\n-- local v1 = Vec2.new(3, 4)\n-- local v2 = Vec2.new(1, 0)\n-- print(v1:length())          --> 5\n-- print(v1:normalize())       --> (0.6, 0.8)\n-- print(v1:dot(v2))           --> 3\n-- local v3 = v1 + v2          --> (4, 4)\n",
+    "tags": ["math", "vector", "vec2", "physics"]
+  },
+  {
+    "id": "math-utils",
+    "title": "Math Utilities",
+    "category": "math",
+    "description": "Commonly needed math helpers: lerp, clamp, map, sign, round, and random in range.",
+    "code": "local M = {}\n\n-- Linear interpolation between a and b by t (0..1)\nfunction M.lerp(a, b, t)\n    return a + (b - a) * t\nend\n\n-- Clamp x between lo and hi\nfunction M.clamp(x, lo, hi)\n    return math.max(lo, math.min(hi, x))\nend\n\n-- Map x from [inLo,inHi] range to [outLo,outHi]\nfunction M.map(x, inLo, inHi, outLo, outHi)\n    return outLo + (x - inLo) / (inHi - inLo) * (outHi - outLo)\nend\n\n-- Sign of x: -1, 0, or 1\nfunction M.sign(x)\n    if x > 0 then return 1 elseif x < 0 then return -1 else return 0 end\nend\n\n-- Round to nearest integer (or decimal places)\nfunction M.round(x, places)\n    local f = 10 ^ (places or 0)\n    return math.floor(x * f + 0.5) / f\nend\n\n-- Random float in [lo, hi]\nfunction M.randomf(lo, hi)\n    return lo + math.random() * (hi - lo)\nend\n\n-- Angle between two points (radians)\nfunction M.angleTo(x1, y1, x2, y2)\n    return math.atan2(y2 - y1, x2 - x1)\nend\n\n-- Distance between two points\nfunction M.distance(x1, y1, x2, y2)\n    return math.sqrt((x2-x1)^2 + (y2-y1)^2)\nend\n\nreturn M\n",
+    "tags": ["math", "lerp", "clamp", "utils"]
+  },
+  {
+    "id": "math-easing",
+    "title": "Easing Functions",
+    "category": "math",
+    "description": "Common easing curves for smooth animations and tweens. t is always 0..1.",
+    "code": "-- Easing.lua  (t = 0..1)\nlocal Easing = {}\n\nfunction Easing.linear(t)     return t end\n\nfunction Easing.inQuad(t)     return t * t end\nfunction Easing.outQuad(t)    return t * (2 - t) end\nfunction Easing.inOutQuad(t)\n    if t < 0.5 then return 2*t*t else return -1 + (4-2*t)*t end\nend\n\nfunction Easing.inCubic(t)    return t * t * t end\nfunction Easing.outCubic(t)   local s = t-1; return s*s*s + 1 end\nfunction Easing.inOutCubic(t)\n    if t < 0.5 then return 4*t*t*t else local s=2*t-2; return 1 + s*s*s/2 end\nend\n\nfunction Easing.outBounce(t)\n    if t < 1/2.75 then\n        return 7.5625 * t * t\n    elseif t < 2/2.75 then\n        t = t - 1.5/2.75; return 7.5625*t*t + 0.75\n    elseif t < 2.5/2.75 then\n        t = t - 2.25/2.75; return 7.5625*t*t + 0.9375\n    else\n        t = t - 2.625/2.75; return 7.5625*t*t + 0.984375\n    end\nend\n\nfunction Easing.outElastic(t)\n    if t == 0 or t == 1 then return t end\n    return 2^(-10*t) * math.sin((t*10 - 0.75) * (2*math.pi/3)) + 1\nend\n\nfunction Easing.outBack(t)\n    local c = 1.70158 + 1\n    return 1 + c * (t-1)^3 + 1.70158 * (t-1)^2\nend\n\nreturn Easing\n\n-- Usage:\n-- x = startX + (endX - startX) * Easing.outBounce(timer / duration)\n",
+    "tags": ["math", "easing", "tween", "animation"]
+  },
+
+  {
+    "id": "collision-aabb",
+    "title": "AABB Collision",
+    "category": "collision",
+    "description": "Axis-Aligned Bounding Box overlap test — no physics engine needed.",
+    "code": "-- Returns true if two axis-aligned rectangles overlap\nlocal function aabb(ax, ay, aw, ah, bx, by, bw, bh)\n    return ax < bx + bw\n       and ax + aw > bx\n       and ay < by + bh\n       and ay + ah > by\nend\n\n-- Returns overlap depth on each axis (for resolution)\nlocal function aabbOverlap(ax, ay, aw, ah, bx, by, bw, bh)\n    local ox = math.min(ax+aw, bx+bw) - math.max(ax, bx)\n    local oy = math.min(ay+ah, by+bh) - math.max(ay, by)\n    if ox <= 0 or oy <= 0 then return false, 0, 0 end\n    return true, ox, oy\nend\n\n-- Simple push-out resolution\nlocal function resolveAabb(ax, ay, aw, ah, bx, by, bw, bh)\n    local hit, ox, oy = aabbOverlap(ax, ay, aw, ah, bx, by, bw, bh)\n    if not hit then return ax, ay end\n    if ox < oy then\n        ax = ax + (ax < bx and -ox or ox)\n    else\n        ay = ay + (ay < by and -oy or oy)\n    end\n    return ax, ay\nend\n",
+    "tags": ["collision", "aabb", "rect", "physics"]
+  },
+  {
+    "id": "collision-circle",
+    "title": "Circle Collision",
+    "category": "collision",
+    "description": "Circle-circle and circle-rectangle overlap tests.",
+    "code": "-- Circle vs Circle\nlocal function circleCircle(ax, ay, ar, bx, by, br)\n    local dx = ax - bx\n    local dy = ay - by\n    return dx*dx + dy*dy < (ar + br)^2\nend\n\n-- Circle vs AABB  (returns true + nearest point on rect)\nlocal function circleRect(cx, cy, cr, rx, ry, rw, rh)\n    local nearX = math.max(rx, math.min(cx, rx + rw))\n    local nearY = math.max(ry, math.min(cy, ry + rh))\n    local dx = cx - nearX\n    local dy = cy - nearY\n    return dx*dx + dy*dy < cr*cr, nearX, nearY\nend\n\n-- Point inside circle\nlocal function pointInCircle(px, py, cx, cy, cr)\n    return (px-cx)^2 + (py-cy)^2 < cr*cr\nend\n",
+    "tags": ["collision", "circle", "physics"]
+  },
+  {
+    "id": "collision-raycast",
+    "title": "Ray vs AABB",
+    "category": "collision",
+    "description": "Cast a ray (origin + direction) against a rectangle. Returns hit distance t.",
+    "code": "-- Ray vs AABB (slab method)\n-- ox,oy  = ray origin\n-- dx,dy  = ray direction (does NOT need to be normalized)\n-- rx,ry,rw,rh = rectangle\n-- Returns: hit (bool), t (distance along ray to entry point)\nlocal function rayVsAabb(ox, oy, dx, dy, rx, ry, rw, rh)\n    local tminX = (rx      - ox) / dx\n    local tmaxX = (rx + rw - ox) / dx\n    local tminY = (ry      - oy) / dy\n    local tmaxY = (ry + rh - oy) / dy\n\n    if dx == 0 then tminX = -math.huge; tmaxX = math.huge end\n    if dy == 0 then tminY = -math.huge; tmaxY = math.huge end\n\n    local tmin = math.max(math.min(tminX, tmaxX), math.min(tminY, tmaxY))\n    local tmax = math.min(math.max(tminX, tmaxX), math.max(tminY, tmaxY))\n\n    if tmax < 0 or tmin > tmax then return false, math.huge end\n    return true, math.max(tmin, 0)\nend\n\n-- Usage:\n-- local hit, t = rayVsAabb(ox,oy, dx,dy, rx,ry,rw,rh)\n-- if hit and t < maxRange then\n--     local hitX, hitY = ox + dx*t, oy + dy*t\n-- end\n",
+    "tags": ["collision", "ray", "raycast", "aabb"]
+  },
+
+  {
+    "id": "tween-simple",
+    "title": "Tween",
+    "category": "tween",
+    "description": "Lightweight single-value tween with an optional easing function and on-complete callback.",
+    "code": "-- Tween.lua\nlocal Tween = {}\nTween.__index = Tween\n\nfunction Tween.new(from, to, duration, easing, onComplete)\n    return setmetatable({\n        value      = from,\n        from       = from,\n        to         = to,\n        duration   = duration,\n        elapsed    = 0,\n        easing     = easing or function(t) return t end,\n        onComplete = onComplete,\n        done       = false,\n    }, Tween)\nend\n\nfunction Tween:update(dt)\n    if self.done then return end\n    self.elapsed = math.min(self.elapsed + dt, self.duration)\n    local t = self.elapsed / self.duration\n    self.value = self.from + (self.to - self.from) * self.easing(t)\n    if self.elapsed >= self.duration then\n        self.done = true\n        if self.onComplete then self.onComplete() end\n    end\nend\n\nreturn Tween\n\n-- Usage:\n-- local Easing = require(\"Easing\")\n-- local t = Tween.new(0, 400, 1.5, Easing.outBounce, function()\n--     print(\"done!\")\n-- end)\n-- -- in love.update(dt): t:update(dt)\n-- -- in love.draw():     drawPlayer(t.value, y)\n",
+    "tags": ["tween", "animation", "easing"]
+  },
+  {
+    "id": "tween-table",
+    "title": "Tween Table Properties",
+    "category": "tween",
+    "description": "Tween multiple numeric fields on a table at once — animate position, color, scale, etc.",
+    "code": "-- TweenTable.lua\nlocal TweenTable = {}\nTweenTable.__index = TweenTable\n\nfunction TweenTable.new(target, goals, duration, easing, onComplete)\n    local starts = {}\n    for k, v in pairs(goals) do starts[k] = target[k] end\n    return setmetatable({\n        target     = target,\n        goals      = goals,\n        starts     = starts,\n        duration   = duration,\n        elapsed    = 0,\n        easing     = easing or function(t) return t end,\n        onComplete = onComplete,\n        done       = false,\n    }, TweenTable)\nend\n\nfunction TweenTable:update(dt)\n    if self.done then return end\n    self.elapsed = math.min(self.elapsed + dt, self.duration)\n    local t = self.easing(self.elapsed / self.duration)\n    for k, goal in pairs(self.goals) do\n        self.target[k] = self.starts[k] + (goal - self.starts[k]) * t\n    end\n    if self.elapsed >= self.duration then\n        self.done = true\n        if self.onComplete then self.onComplete() end\n    end\nend\n\nreturn TweenTable\n\n-- Usage:\n-- local tw = TweenTable.new(player, { x=400, y=300, alpha=0 }, 1.0, Easing.inOutQuad)\n-- -- in update: tw:update(dt)\n-- -- player.x / player.y / player.alpha are animated automatically\n",
+    "tags": ["tween", "animation", "properties"]
+  },
+
+  {
+    "id": "ui-button",
+    "title": "UI Button",
+    "category": "ui",
+    "description": "A simple clickable button with hover and pressed states.",
+    "code": "-- Button.lua\nlocal Button = {}\nButton.__index = Button\n\nfunction Button.new(x, y, w, h, label, onClick)\n    return setmetatable({\n        x = x, y = y, w = w, h = h,\n        label   = label,\n        onClick = onClick,\n        hovered = false,\n        pressed = false,\n    }, Button)\nend\n\nfunction Button:containsPoint(px, py)\n    return px >= self.x and px <= self.x + self.w\n       and py >= self.y and py <= self.y + self.h\nend\n\nfunction Button:update()\n    local mx, my = love.mouse.getPosition()\n    self.hovered = self:containsPoint(mx, my)\nend\n\nfunction Button:mousepressed(x, y, btn)\n    if btn == 1 and self:containsPoint(x, y) then\n        self.pressed = true\n    end\nend\n\nfunction Button:mousereleased(x, y, btn)\n    if btn == 1 and self.pressed and self:containsPoint(x, y) then\n        if self.onClick then self.onClick() end\n    end\n    self.pressed = false\nend\n\nfunction Button:draw()\n    if self.pressed then\n        love.graphics.setColor(0.3, 0.5, 0.9)\n    elseif self.hovered then\n        love.graphics.setColor(0.4, 0.6, 1.0)\n    else\n        love.graphics.setColor(0.25, 0.35, 0.7)\n    end\n    love.graphics.rectangle(\"fill\", self.x, self.y, self.w, self.h, 6, 6)\n    love.graphics.setColor(1, 1, 1)\n    love.graphics.printf(self.label, self.x, self.y + self.h/2 - 7, self.w, \"center\")\nend\n\nreturn Button\n",
+    "tags": ["ui", "button", "mouse", "hud"]
+  },
+  {
+    "id": "ui-progressbar",
+    "title": "Progress Bar / Health Bar",
+    "category": "ui",
+    "description": "Animated progress bar for health, mana, XP, loading — any normalized value 0..1.",
+    "code": "-- ProgressBar.lua\nlocal ProgressBar = {}\nProgressBar.__index = ProgressBar\n\nfunction ProgressBar.new(x, y, w, h, opts)\n    opts = opts or {}\n    return setmetatable({\n        x = x, y = y, w = w, h = h,\n        value        = opts.value        or 1,    -- current 0..1\n        displayValue = opts.value        or 1,    -- animated display\n        bgColor      = opts.bgColor      or {0.15, 0.15, 0.15},\n        fillColor    = opts.fillColor    or {0.2, 0.8, 0.3},\n        borderColor  = opts.borderColor  or {0.5, 0.5, 0.5},\n        cornerRadius = opts.cornerRadius or 4,\n        lerpSpeed    = opts.lerpSpeed    or 4,    -- 0 = instant\n    }, ProgressBar)\nend\n\nfunction ProgressBar:setValue(v)\n    self.value = math.max(0, math.min(1, v))\nend\n\nfunction ProgressBar:update(dt)\n    if self.lerpSpeed > 0 then\n        self.displayValue = self.displayValue + (self.value - self.displayValue) * self.lerpSpeed * dt\n    else\n        self.displayValue = self.value\n    end\nend\n\nfunction ProgressBar:draw()\n    local r = self.cornerRadius\n    love.graphics.setColor(self.bgColor)\n    love.graphics.rectangle(\"fill\", self.x, self.y, self.w, self.h, r, r)\n    if self.displayValue > 0 then\n        love.graphics.setColor(self.fillColor)\n        love.graphics.rectangle(\"fill\", self.x, self.y, self.w * self.displayValue, self.h, r, r)\n    end\n    love.graphics.setColor(self.borderColor)\n    love.graphics.rectangle(\"line\", self.x, self.y, self.w, self.h, r, r)\n    love.graphics.setColor(1,1,1)\nend\n\nreturn ProgressBar\n",
+    "tags": ["ui", "progressbar", "healthbar", "hud"]
+  },
+
+  {
+    "id": "debug-overlay",
+    "title": "Debug Overlay",
+    "category": "debug",
+    "description": "On-screen debug panel: FPS, delta time, and arbitrary key-value watches.",
+    "code": "-- DebugOverlay.lua\nlocal Debug = {\n    enabled = true,\n    watches = {},\n}\n\nfunction Debug.watch(key, value)\n    Debug.watches[key] = value\nend\n\nfunction Debug.draw()\n    if not Debug.enabled then return end\n    local lines = {\n        string.format(\"FPS:  %d\",     love.timer.getFPS()),\n        string.format(\"dt:   %.4f\",   love.timer.getDelta()),\n        string.format(\"mem:  %.1f KB\", collectgarbage(\"count\")),\n    }\n    for k, v in pairs(Debug.watches) do\n        table.insert(lines, string.format(\"%s: %s\", k, tostring(v)))\n    end\n\n    local pad   = 8\n    local lineH = 16\n    local w     = 180\n    local h     = #lines * lineH + pad * 2\n\n    love.graphics.setColor(0, 0, 0, 0.55)\n    love.graphics.rectangle(\"fill\", pad, pad, w, h, 6, 6)\n    love.graphics.setColor(0.2, 1, 0.4)\n    for i, line in ipairs(lines) do\n        love.graphics.print(line, pad*2, pad + (i-1)*lineH)\n    end\n    love.graphics.setColor(1,1,1)\nend\n\nreturn Debug\n\n-- Usage:\n-- local Debug = require(\"Debug\")\n-- function love.keypressed(k) if k == \"`\" then Debug.enabled = not Debug.enabled end end\n-- function love.update(dt)  Debug.watch(\"player.x\", player.x) end\n-- function love.draw()      Debug.draw() end\n",
+    "tags": ["debug", "fps", "overlay", "dev"]
+  },
+  {
+    "id": "debug-grid",
+    "title": "Debug Grid",
+    "category": "debug",
+    "description": "Draw a world-space grid — useful for tile alignment and camera debugging.",
+    "code": "local function drawGrid(cellSize, camX, camY, color)\n    cellSize = cellSize or 32\n    camX     = camX     or 0\n    camY     = camY     or 0\n    color    = color    or {1, 1, 1, 0.08}\n\n    local W = love.graphics.getWidth()\n    local H = love.graphics.getHeight()\n\n    local startX = math.floor(camX / cellSize) * cellSize - camX\n    local startY = math.floor(camY / cellSize) * cellSize - camY\n\n    love.graphics.setColor(color)\n    local x = startX\n    while x <= W do\n        love.graphics.line(x, 0, x, H)\n        x = x + cellSize\n    end\n    local y = startY\n    while y <= H do\n        love.graphics.line(0, y, W, y)\n        y = y + cellSize\n    end\n    love.graphics.setColor(1,1,1)\nend\n\n-- Usage in love.draw() (call BEFORE cam:detach()):\n-- drawGrid(32, cam.x - W/2, cam.y - H/2)\n",
+    "tags": ["debug", "grid", "camera", "dev"]
+  },
+
+  {
+    "id": "graphics-shader",
+    "title": "Basic Shader",
+    "category": "graphics",
+    "description": "Minimal GLSL shader in LÖVE — grayscale effect as a starting point.",
+    "code": "local grayscaleShader\n\nfunction love.load()\n    grayscaleShader = love.graphics.newShader([[\n        vec4 effect(vec4 color, Image tex, vec2 texCoords, vec2 screenCoords) {\n            vec4 pixel = Texel(tex, texCoords) * color;\n            float gray = dot(pixel.rgb, vec3(0.299, 0.587, 0.114));\n            return vec4(gray, gray, gray, pixel.a);\n        }\n    ]])\nend\n\nfunction love.draw()\n    -- Without shader\n    love.graphics.draw(myImage, 0, 0)\n\n    -- With shader\n    love.graphics.setShader(grayscaleShader)\n    love.graphics.draw(myImage, 200, 0)\n    love.graphics.setShader()   -- reset to default\nend\n\n-- Pass a uniform to the shader:\n-- shader:send(\"brightness\", 1.5)\n-- Add to GLSL: extern float brightness;\n",
+    "tags": ["graphics", "shader", "glsl", "effects"]
+  },
+
+  {
+    "id": "graphics-canvas",
+    "title": "Canvas (Render to Texture)",
+    "category": "graphics",
+    "description": "Draw into an off-screen canvas and reuse it — useful for lighting, blur, minimaps, and static scenes.",
+    "code": "local canvas\n\nfunction love.load()\n    canvas = love.graphics.newCanvas(400, 300)\n\n    -- Draw once into the canvas\n    love.graphics.setCanvas(canvas)\n        love.graphics.clear(0, 0, 0, 0)\n        love.graphics.setColor(1, 0.4, 0.1)\n        love.graphics.circle(\"fill\", 200, 150, 80)\n        love.graphics.setColor(1, 1, 1)\n        love.graphics.print(\"Rendered offline\", 140, 260)\n    love.graphics.setCanvas()   -- back to screen\nend\n\nfunction love.draw()\n    -- Draw the canvas like any image\n    love.graphics.setColor(1, 1, 1)\n    love.graphics.draw(canvas, 0, 0)\n\n    -- Draw it again, scaled and tinted\n    love.graphics.setColor(0.5, 0.8, 1, 0.6)\n    love.graphics.draw(canvas, 500, 50, 0, 0.5, 0.5)\n\n    love.graphics.setColor(1, 1, 1)\nend\n\n-- TIP: call love.graphics.setCanvas(canvas) every frame\n-- if the canvas contents need to change dynamically.\n",
+    "tags": ["graphics", "canvas", "rendertexture", "offscreen"]
+  },
+  {
+    "id": "graphics-stencil",
+    "title": "Stencil Mask",
+    "category": "graphics",
+    "description": "Use a stencil to mask drawing to a specific shape — good for portals, flashlights, UI cutouts.",
+    "code": "function love.draw()\n    -- 1. Write the mask shape into the stencil buffer\n    love.graphics.stencil(function()\n        love.graphics.circle(\"fill\", 400, 300, 120)  -- circular viewport\n    end, \"replace\", 1)\n\n    -- 2. Only draw where stencil == 1\n    love.graphics.setStencilTest(\"equal\", 1)\n        love.graphics.setColor(0.2, 0.6, 1)\n        love.graphics.rectangle(\"fill\", 0, 0, 800, 600)  -- fills only inside circle\n        love.graphics.setColor(1, 1, 1)\n        love.graphics.print(\"Inside the mask\", 330, 290)\n    love.graphics.setStencilTest()  -- disable stencil test\n\n    -- 3. Draw outside the mask (invert test)\n    love.graphics.stencil(function()\n        love.graphics.circle(\"fill\", 400, 300, 120)\n    end, \"replace\", 1)\n    love.graphics.setStencilTest(\"notequal\", 1)\n        love.graphics.setColor(0.08, 0.08, 0.08, 0.85)\n        love.graphics.rectangle(\"fill\", 0, 0, 800, 600)  -- dim outside\n    love.graphics.setStencilTest()\nend\n",
+    "tags": ["graphics", "stencil", "mask", "effects"]
+  },
+  {
+    "id": "graphics-spritesheet",
+    "title": "Spritesheet Animation",
+    "category": "graphics",
+    "description": "Frame-by-frame animation from a spritesheet using Quads. Supports multiple named animations.",
+    "code": "-- Animator.lua\nlocal Animator = {}\nAnimator.__index = Animator\n\nfunction Animator.new(image, frameW, frameH)\n    local iw, ih = image:getDimensions()\n    local self = setmetatable({\n        image   = image,\n        frameW  = frameW,\n        frameH  = frameH,\n        anims   = {},\n        current = nil,\n        frame   = 1,\n        timer   = 0,\n    }, Animator)\n    -- Pre-build all quads\n    self.quads = {}\n    local idx = 1\n    for row = 0, ih / frameH - 1 do\n        for col = 0, iw / frameW - 1 do\n            self.quads[idx] = love.graphics.newQuad(\n                col*frameW, row*frameH, frameW, frameH, iw, ih)\n            idx = idx + 1\n        end\n    end\n    return self\nend\n\n-- frames: list of quad indices, fps: playback speed\nfunction Animator:addAnim(name, frames, fps, loop)\n    self.anims[name] = { frames=frames, fps=fps or 8, loop=loop~=false }\nend\n\nfunction Animator:play(name)\n    if self.current == name then return end\n    self.current = name\n    self.frame   = 1\n    self.timer   = 0\nend\n\nfunction Animator:update(dt)\n    local anim = self.anims[self.current]\n    if not anim then return end\n    self.timer = self.timer + dt\n    if self.timer >= 1 / anim.fps then\n        self.timer = 0\n        self.frame = self.frame + 1\n        if self.frame > #anim.frames then\n            self.frame = anim.loop and 1 or #anim.frames\n        end\n    end\nend\n\nfunction Animator:draw(x, y, r, sx, sy)\n    local anim = self.anims[self.current]\n    if not anim then return end\n    local quad = self.quads[anim.frames[self.frame]]\n    love.graphics.draw(self.image, quad, x, y, r or 0, sx or 1, sy or 1,\n        self.frameW/2, self.frameH/2)\nend\n\nreturn Animator\n\n-- Usage:\n-- local anim = Animator.new(love.graphics.newImage(\"hero.png\"), 32, 32)\n-- anim:addAnim(\"idle\",  {1,2,3,4},     4)\n-- anim:addAnim(\"run\",   {5,6,7,8,9,10}, 10)\n-- anim:addAnim(\"jump\",  {11,12},        6, false)\n-- anim:play(\"idle\")\n-- -- in update: anim:update(dt)\n-- -- in draw:   anim:draw(player.x, player.y)\n",
+    "tags": ["graphics", "animation", "spritesheet", "quads"]
+  },
+
+  {
+    "id": "input-gamepad",
+    "title": "Gamepad / Joystick Input",
+    "category": "input",
+    "description": "Detect connected gamepads and read buttons, axes, and triggers.",
+    "code": "local gamepad = nil\n\nfunction love.load()\n    -- Use first connected joystick if available\n    local joysticks = love.joystick.getJoysticks()\n    if joysticks[1] and joysticks[1]:isGamepad() then\n        gamepad = joysticks[1]\n    end\nend\n\nfunction love.joystickadded(joystick)\n    if joystick:isGamepad() and not gamepad then\n        gamepad = joystick\n        print(\"Gamepad connected:\", joystick:getName())\n    end\nend\n\nfunction love.joystickremoved(joystick)\n    if joystick == gamepad then\n        gamepad = nil\n        print(\"Gamepad disconnected\")\n    end\nend\n\nfunction love.update(dt)\n    if not gamepad then return end\n\n    -- Buttons (A/B/X/Y, dpads, shoulders)\n    if gamepad:isGamepadDown(\"a\") then print(\"A pressed\") end\n    if gamepad:isGamepadDown(\"dpup\") then print(\"D-pad up\") end\n\n    -- Axes: leftx, lefty, rightx, righty, triggerleft, triggerright (-1..1)\n    local lx = gamepad:getGamepadAxis(\"leftx\")\n    local ly = gamepad:getGamepadAxis(\"lefty\")\n    local deadzone = 0.15\n    if math.abs(lx) > deadzone then\n        player.x = player.x + lx * player.speed * dt\n    end\n    if math.abs(ly) > deadzone then\n        player.y = player.y + ly * player.speed * dt\n    end\n\n    -- Triggers (0..1)\n    local rt = gamepad:getGamepadAxis(\"triggerright\")\n    if rt > 0.5 then print(\"Shooting!\") end\nend\n\nfunction love.gamepadpressed(joystick, button)\n    print(\"Button pressed:\", button)  -- \"a\", \"b\", \"x\", \"y\", \"start\", etc.\nend\n",
+    "tags": ["input", "gamepad", "joystick", "controller"]
+  },
+  {
+    "id": "input-touch",
+    "title": "Touch Input",
+    "category": "input",
+    "description": "Multi-touch input for mobile — track individual touch points by ID.",
+    "code": "local touches = {}  -- id -> {x, y, dx, dy, pressure}\n\nfunction love.touchpressed(id, x, y, dx, dy, pressure)\n    touches[id] = { x=x, y=y, dx=dx, dy=dy, pressure=pressure }\n    print(\"Touch began at\", x, y)\nend\n\nfunction love.touchmoved(id, x, y, dx, dy, pressure)\n    if touches[id] then\n        touches[id] = { x=x, y=y, dx=dx, dy=dy, pressure=pressure }\n    end\nend\n\nfunction love.touchreleased(id, x, y, dx, dy, pressure)\n    touches[id] = nil\n    print(\"Touch ended at\", x, y)\nend\n\nfunction love.draw()\n    for id, t in pairs(touches) do\n        love.graphics.setColor(1, 0.4, 0.4, 0.6)\n        love.graphics.circle(\"fill\", t.x, t.y, 40 * t.pressure + 10)\n        love.graphics.setColor(1, 1, 1)\n        love.graphics.print(string.format(\"(%.0f,%.0f)\", t.x, t.y), t.x+15, t.y)\n    end\nend\n\n-- Count active touches:\n-- local count = 0; for _ in pairs(touches) do count = count + 1 end\n",
+    "tags": ["input", "touch", "mobile", "multitouch"]
+  },
+
+  {
+    "id": "audio-effects",
+    "title": "Audio Effects (Reverb / Lowpass)",
+    "category": "audio",
+    "description": "Apply reverb and low-pass filter effects to audio sources using LÖVE's effect system.",
+    "code": "local sfx, music\n\nfunction love.load()\n    -- Reverb effect (simulates room acoustics)\n    love.audio.setEffect(\"reverb\", {\n        type    = \"reverb\",\n        volume  = 1.0,\n        decaytime = 1.5,    -- seconds\n        density = 0.9,\n        diffusion = 0.8,\n    })\n\n    -- Low-pass filter (muffled sound, e.g. through a wall)\n    love.audio.setEffect(\"muffled\", {\n        type    = \"lowpass\",\n        volume  = 1.0,\n        highgain = 0.1,    -- 0 = fully muffled, 1 = no filter\n    })\n\n    sfx   = love.audio.newSource(\"sounds/jump.wav\", \"static\")\n    music = love.audio.newSource(\"music/theme.ogg\", \"stream\")\n    music:setLooping(true)\n    music:play()\nend\n\nfunction love.keypressed(key)\n    if key == \"1\" then\n        sfx:setEffect(\"reverb\")\n        sfx:stop(); sfx:play()\n    elseif key == \"2\" then\n        sfx:setEffect(\"muffled\")\n        sfx:stop(); sfx:play()\n    elseif key == \"3\" then\n        sfx:setEffect(nil)   -- remove effects\n        sfx:stop(); sfx:play()\n    end\n    -- Toggle muffled music (e.g. entering a building)\n    if key == \"m\" then\n        music:setEffect(music:getEffect() and nil or \"muffled\")\n    end\nend\n",
+    "tags": ["audio", "effects", "reverb", "lowpass"]
+  },
+  {
+    "id": "audio-spatial",
+    "title": "Spatial / Positional Audio",
+    "category": "audio",
+    "description": "3D positional audio — sounds get quieter as the listener moves away from the source.",
+    "code": "local explosion\nlocal listenerX, listenerY = 400, 300\n\nfunction love.load()\n    explosion = love.audio.newSource(\"sounds/explosion.wav\", \"static\")\n\n    -- Attenuation model: sound fades beyond referenceDistance\n    explosion:setAttenuationDistances(80, 500)  -- ref, max\n    explosion:setRolloff(1.0)   -- 1 = linear falloff\nend\n\nfunction love.update(dt)\n    -- Move listener with arrow keys\n    if love.keyboard.isDown(\"left\")  then listenerX = listenerX - 200*dt end\n    if love.keyboard.isDown(\"right\") then listenerX = listenerX + 200*dt end\n    if love.keyboard.isDown(\"up\")    then listenerY = listenerY - 200*dt end\n    if love.keyboard.isDown(\"down\")  then listenerY = listenerY + 200*dt end\n\n    -- LÖVE uses 3D internally; map 2D coords to x,z plane\n    love.audio.setPosition(listenerX / 100, 0, listenerY / 100)\nend\n\nfunction love.mousepressed(x, y, btn)\n    if btn == 1 then\n        -- Play explosion at clicked position\n        local src = explosion:clone()\n        src:setPosition(x / 100, 0, y / 100)\n        src:setRelative(false)\n        src:play()\n    end\nend\n",
+    "tags": ["audio", "spatial", "positional", "3d"]
+  },
+
+  {
+    "id": "physics-collision-callbacks",
+    "title": "Physics Collision Callbacks",
+    "category": "physics",
+    "description": "Detect when Box2D fixtures begin and end contact — react to collisions in game logic.",
+    "code": "local world, playerBody, groundBody\nlocal isGrounded = false\n\nfunction love.load()\n    world = love.physics.newWorld(0, 9.81 * 64, true)\n\n    -- Ground\n    groundBody    = love.physics.newBody(world, 400, 480, \"static\")\n    local gShape  = love.physics.newRectangleShape(800, 40)\n    local gFix    = love.physics.newFixture(groundBody, gShape)\n    gFix:setUserData(\"ground\")\n\n    -- Player\n    playerBody    = love.physics.newBody(world, 200, 100, \"dynamic\")\n    local pShape  = love.physics.newRectangleShape(30, 50)\n    local pFix    = love.physics.newFixture(playerBody, pShape, 1)\n    pFix:setUserData(\"player\")\n    playerBody:setFixedRotation(true)\n\n    -- Collision callbacks\n    world:setCallbacks(\n        function(a, b, coll)  -- beginContact\n            local da, db = a:getUserData(), b:getUserData()\n            if (da==\"player\" and db==\"ground\") or\n               (da==\"ground\" and db==\"player\") then\n                isGrounded = true\n            end\n        end,\n        function(a, b, coll)  -- endContact\n            local da, db = a:getUserData(), b:getUserData()\n            if (da==\"player\" and db==\"ground\") or\n               (da==\"ground\" and db==\"player\") then\n                isGrounded = false\n            end\n        end,\n        nil, nil              -- preSolve, postSolve\n    )\nend\n\nfunction love.update(dt)\n    world:update(dt)\nend\n\nfunction love.keypressed(key)\n    if key == \"space\" and isGrounded then\n        playerBody:applyLinearImpulse(0, -400)\n    end\nend\n",
+    "tags": ["physics", "collision", "callbacks", "box2d"]
+  },
+  {
+    "id": "physics-joints",
+    "title": "Physics Joints",
+    "category": "physics",
+    "description": "Common Box2D joints: distance, revolute (hinge), and mouse (drag) joint.",
+    "code": "local world, bodyA, bodyB\nlocal distJoint, revJoint, mouseJoint\nlocal anchor\n\nfunction love.load()\n    world = love.physics.newWorld(0, 400, true)\n\n    local shapeA = love.physics.newRectangleShape(40, 40)\n    local shapeB = love.physics.newRectangleShape(40, 40)\n\n    bodyA = love.physics.newBody(world, 300, 200, \"dynamic\")\n    love.physics.newFixture(bodyA, shapeA, 1)\n\n    bodyB = love.physics.newBody(world, 450, 200, \"dynamic\")\n    love.physics.newFixture(bodyB, shapeB, 1)\n\n    -- Distance joint: keeps two bodies a fixed distance apart\n    distJoint = love.physics.newDistanceJoint(bodyA, bodyB,\n        bodyA:getX(), bodyA:getY(),\n        bodyB:getX(), bodyB:getY(), true)\n    distJoint:setFrequency(2)     -- springiness\n    distJoint:setDampingRatio(0.5)\n\n    -- Revolute joint: pin bodyB to a static anchor (like a pendulum)\n    anchor = love.physics.newBody(world, 400, 100, \"static\")\n    local anchorShape = love.physics.newCircleShape(5)\n    love.physics.newFixture(anchor, anchorShape)\n    revJoint = love.physics.newRevoluteJoint(anchor, bodyB,\n        anchor:getX(), anchor:getY(), true)\n    -- revJoint:setMotorEnabled(true)\n    -- revJoint:setMotorSpeed(2)\n    -- revJoint:setMaxMotorTorque(1000)\nend\n\nfunction love.update(dt)\n    world:update(dt)\nend\n\nfunction love.mousepressed(x, y, btn)\n    -- Mouse joint: drag a body with the cursor\n    if btn == 1 then\n        if mouseJoint then mouseJoint:destroy() end\n        mouseJoint = love.physics.newMouseJoint(bodyA, x, y)\n    end\nend\n\nfunction love.mousereleased(x, y, btn)\n    if btn == 1 and mouseJoint then\n        mouseJoint:destroy()\n        mouseJoint = nil\n    end\nend\n\nfunction love.mousemoved(x, y)\n    if mouseJoint then mouseJoint:setTarget(x, y) end\nend\n",
+    "tags": ["physics", "joints", "box2d", "constraints"]
+  },
+
+  {
+    "id": "filesystem-serialize",
+    "title": "Lua Table Serializer",
+    "category": "filesystem",
+    "description": "Serialize and deserialize a Lua table to/from a string — a minimal save system without external libraries.",
+    "code": "-- Serialize.lua\nlocal Serialize = {}\n\nfunction Serialize.encode(val, indent)\n    local t = type(val)\n    if t == \"number\"  then return tostring(val)\n    elseif t == \"boolean\" then return tostring(val)\n    elseif t == \"string\"  then return string.format(\"%q\", val)\n    elseif t == \"table\" then\n        local items = {}\n        for k, v in pairs(val) do\n            local key = type(k) == \"string\"\n                and string.format(\"[%q]=\", k)\n                or  \"[\"..tostring(k)..\"]=\"\n            table.insert(items, key .. Serialize.encode(v))\n        end\n        return \"{\" .. table.concat(items, \",\") .. \"}\"\n    end\n    return \"nil\"\nend\n\nfunction Serialize.decode(str)\n    local fn, err = load(\"return \" .. str)\n    if not fn then error(\"Deserialize error: \" .. err) end\n    return fn()\nend\n\nfunction Serialize.save(filename, data)\n    local str = Serialize.encode(data)\n    love.filesystem.write(filename, str)\nend\n\nfunction Serialize.load(filename)\n    if not love.filesystem.getInfo(filename) then return nil end\n    local str = love.filesystem.read(filename)\n    return Serialize.decode(str)\nend\n\nreturn Serialize\n\n-- Usage:\n-- local S = require(\"Serialize\")\n-- S.save(\"save.dat\", { level=3, coins=120, playerName=\"Hero\" })\n-- local data = S.load(\"save.dat\")\n-- print(data.coins)  --> 120\n",
+    "tags": ["filesystem", "serialize", "save", "table"]
+  },
+  {
+    "id": "filesystem-list",
+    "title": "List & Iterate Files",
+    "category": "filesystem",
+    "description": "Enumerate files and directories in the save or source directory.",
+    "code": "-- List files in a directory\nlocal function listFiles(dir, ext)\n    local results = {}\n    local items = love.filesystem.getDirectoryItems(dir)\n    for _, name in ipairs(items) do\n        local path = dir .. \"/\" .. name\n        local info = love.filesystem.getInfo(path)\n        if info then\n            if info.type == \"file\" then\n                if not ext or name:match(\"%\" .. ext .. \"$\") then\n                    table.insert(results, { path=path, name=name, size=info.size })\n                end\n            end\n        end\n    end\n    return results\nend\n\n-- Recursive file walker\nlocal function walkDir(dir, callback)\n    for _, name in ipairs(love.filesystem.getDirectoryItems(dir)) do\n        local path = dir .. \"/\" .. name\n        local info = love.filesystem.getInfo(path)\n        if info then\n            if info.type == \"directory\" then\n                walkDir(path, callback)\n            elseif info.type == \"file\" then\n                callback(path, name, info)\n            end\n        end\n    end\nend\n\n-- Usage:\n-- local saves = listFiles(\"saves\", \".dat\")\n-- for _, f in ipairs(saves) do print(f.name, f.size) end\n--\n-- walkDir(\"levels\", function(path, name, info)\n--     print(path, info.size .. \" bytes\")\n-- end)\n",
+    "tags": ["filesystem", "list", "directory", "walk"]
+  },
+
+  {
+    "id": "graphics-gradient",
+    "title": "Gradient Rectangle",
+    "category": "graphics",
+    "description": "Draw smooth color gradients using a Mesh — horizontal, vertical, or diagonal.",
+    "code": "-- Vertical gradient (top color -> bottom color)\nlocal function gradientRect(x, y, w, h, colorTop, colorBot)\n    local verts = {\n        { x,   y,   0, 0, colorTop[1], colorTop[2], colorTop[3], colorTop[4] or 1 },\n        { x+w, y,   1, 0, colorTop[1], colorTop[2], colorTop[3], colorTop[4] or 1 },\n        { x+w, y+h, 1, 1, colorBot[1], colorBot[2], colorBot[3], colorBot[4] or 1 },\n        { x,   y+h, 0, 1, colorBot[1], colorBot[2], colorBot[3], colorBot[4] or 1 },\n    }\n    local mesh = love.graphics.newMesh(verts, \"fan\")\n    love.graphics.draw(mesh)\nend\n\n-- Radial gradient from center\nlocal function radialGradient(cx, cy, radius, colorIn, colorOut, steps)\n    steps = steps or 32\n    local verts = {}\n    -- Center vertex\n    table.insert(verts, { cx, cy, 0.5, 0.5,\n        colorIn[1], colorIn[2], colorIn[3], colorIn[4] or 1 })\n    for i = 0, steps do\n        local a = (i / steps) * 2 * math.pi\n        table.insert(verts, {\n            cx + math.cos(a) * radius,\n            cy + math.sin(a) * radius,\n            0.5 + 0.5*math.cos(a),\n            0.5 + 0.5*math.sin(a),\n            colorOut[1], colorOut[2], colorOut[3], colorOut[4] or 1\n        })\n    end\n    love.graphics.draw(love.graphics.newMesh(verts, \"fan\"))\nend\n\n-- Usage:\n-- gradientRect(0, 0, 800, 600, {0.05,0.05,0.2}, {0.2,0.05,0.3})\n-- radialGradient(400, 300, 200, {1,0.8,0,0.8}, {1,0.3,0,0})\n",
+    "tags": ["graphics", "gradient", "mesh", "color"]
+  },
+  {
+    "id": "graphics-print-centered",
+    "title": "Draw Centered / Aligned Text",
+    "category": "graphics",
+    "description": "Center text on screen or within a box, with optional shadow and scaling.",
+    "code": "-- Center text on screen\nlocal function printCentered(text, y, font)\n    font = font or love.graphics.getFont()\n    local w = font:getWidth(text)\n    local x = (love.graphics.getWidth() - w) / 2\n    love.graphics.print(text, x, y)\nend\n\n-- Center within a rectangle\nlocal function printInRect(text, rx, ry, rw, rh, font)\n    font = font or love.graphics.getFont()\n    local tw = font:getWidth(text)\n    local th = font:getHeight()\n    local x  = rx + (rw - tw) / 2\n    local y  = ry + (rh - th) / 2\n    love.graphics.print(text, math.floor(x), math.floor(y))\nend\n\n-- Text with drop shadow\nlocal function printShadow(text, x, y, shadowColor, offsetX, offsetY)\n    offsetX = offsetX or 2\n    offsetY = offsetY or 2\n    shadowColor = shadowColor or {0, 0, 0, 0.6}\n    love.graphics.setColor(shadowColor)\n    love.graphics.print(text, x + offsetX, y + offsetY)\n    love.graphics.setColor(1, 1, 1)\n    love.graphics.print(text, x, y)\nend\n\n-- Typewriter effect\nlocal typeText = \"Hello, world!\"\nlocal typeTimer, typeIndex = 0, 0\nlocal TYPE_SPEED = 0.05  -- seconds per character\n\nfunction love.update(dt)\n    typeTimer = typeTimer + dt\n    if typeTimer >= TYPE_SPEED and typeIndex < #typeText then\n        typeTimer = 0\n        typeIndex = typeIndex + 1\n    end\nend\n\nfunction love.draw()\n    love.graphics.print(typeText:sub(1, typeIndex), 100, 100)\nend\n",
+    "tags": ["graphics", "text", "centered", "shadow", "typewriter"]
+  },
+
+  {
+    "id": "gameplay-timer-manager",
+    "title": "Timer Manager",
+    "category": "gameplay",
+    "description": "Schedule one-shot and repeating callbacks by name — no manual timer tracking.",
+    "code": "-- Timer.lua\nlocal Timer = {}\nTimer.__index = Timer\n\nfunction Timer.new()\n    return setmetatable({ _timers = {} }, Timer)\nend\n\n-- Call fn after `delay` seconds (once)\nfunction Timer:after(delay, fn, tag)\n    table.insert(self._timers, { t=delay, fn=fn, tag=tag, repeat_=false })\nend\n\n-- Call fn every `interval` seconds\nfunction Timer:every(interval, fn, tag)\n    table.insert(self._timers, { t=interval, interval=interval, fn=fn, tag=tag, repeat_=true })\nend\n\n-- Cancel all timers with a given tag\nfunction Timer:cancel(tag)\n    for i = #self._timers, 1, -1 do\n        if self._timers[i].tag == tag then\n            table.remove(self._timers, i)\n        end\n    end\nend\n\nfunction Timer:update(dt)\n    for i = #self._timers, 1, -1 do\n        local tmr = self._timers[i]\n        tmr.t = tmr.t - dt\n        if tmr.t <= 0 then\n            tmr.fn()\n            if tmr.repeat_ then\n                tmr.t = tmr.interval\n            else\n                table.remove(self._timers, i)\n            end\n        end\n    end\nend\n\nreturn Timer\n\n-- Usage:\n-- local Timer = require(\"Timer\")\n-- local timers = Timer.new()\n--\n-- timers:after(3.0, function() spawnEnemy() end, \"spawn\")\n-- timers:every(0.5, function() shootBullet() end, \"shoot\")\n-- timers:cancel(\"shoot\")   -- stop repeating\n-- -- in love.update(dt): timers:update(dt)\n",
+    "tags": ["gameplay", "timer", "schedule", "callback"]
+  },
+  {
+    "id": "gameplay-screenshake",
+    "title": "Screen Shake",
+    "category": "gameplay",
+    "description": "Trauma-based camera shake. Add trauma on impact; shake intensity falls off as trauma squared.",
+    "code": "-- ScreenShake.lua\nlocal ScreenShake = {\n    trauma    = 0,\n    maxOffset = 18,\n    maxAngle  = 0.06,  -- radians\n    decay     = 1.8,\n    offsetX   = 0,\n    offsetY   = 0,\n    angle     = 0,\n}\n\nfunction ScreenShake.add(amount)\n    ScreenShake.trauma = math.min(ScreenShake.trauma + amount, 1)\nend\n\nfunction ScreenShake.update(dt)\n    ScreenShake.trauma = math.max(ScreenShake.trauma - ScreenShake.decay * dt, 0)\n    local s = ScreenShake.trauma ^ 2\n    local r = love.math.random\n    ScreenShake.offsetX = ScreenShake.maxOffset * s * (r()*2 - 1)\n    ScreenShake.offsetY = ScreenShake.maxOffset * s * (r()*2 - 1)\n    ScreenShake.angle   = ScreenShake.maxAngle  * s * (r()*2 - 1)\nend\n\nfunction ScreenShake.attach()\n    local hw = love.graphics.getWidth()  / 2\n    local hh = love.graphics.getHeight() / 2\n    love.graphics.push()\n    love.graphics.translate(hw + ScreenShake.offsetX, hh + ScreenShake.offsetY)\n    love.graphics.rotate(ScreenShake.angle)\n    love.graphics.translate(-hw, -hh)\nend\n\nfunction ScreenShake.detach()\n    love.graphics.pop()\nend\n\nreturn ScreenShake\n\n-- Usage:\n-- ScreenShake.add(0.6)  -- on explosion, bullet hit, etc.\n-- -- in update: ScreenShake.update(dt)\n-- -- in draw:\n--   ScreenShake.attach()\n--     -- draw world\n--   ScreenShake.detach()\n--     -- draw HUD (unaffected)\n",
+    "tags": ["gameplay", "screenshake", "camera", "effect"]
+  },
+  {
+    "id": "gameplay-grid",
+    "title": "Grid / Tilemap Data Structure",
+    "category": "gameplay",
+    "description": "2D grid with get/set, world-to-cell conversion, and neighbor queries.",
+    "code": "-- Grid.lua\nlocal Grid = {}\nGrid.__index = Grid\n\nfunction Grid.new(cols, rows, tileSize, default)\n    local self = setmetatable({\n        cols     = cols,\n        rows     = rows,\n        tileSize = tileSize or 32,\n        _data    = {},\n    }, Grid)\n    for y = 1, rows do\n        self._data[y] = {}\n        for x = 1, cols do\n            self._data[y][x] = default or 0\n        end\n    end\n    return self\nend\n\nfunction Grid:inBounds(x, y)\n    return x >= 1 and x <= self.cols and y >= 1 and y <= self.rows\nend\n\nfunction Grid:get(x, y)        if self:inBounds(x,y) then return self._data[y][x] end end\nfunction Grid:set(x, y, val)   if self:inBounds(x,y) then self._data[y][x] = val  end end\n\n-- Convert world pixels -> cell coords\nfunction Grid:worldToCell(wx, wy)\n    return math.floor(wx / self.tileSize) + 1,\n           math.floor(wy / self.tileSize) + 1\nend\n\n-- Convert cell -> world pixel (top-left corner)\nfunction Grid:cellToWorld(cx, cy)\n    return (cx-1) * self.tileSize, (cy-1) * self.tileSize\nend\n\n-- 4-directional neighbors\nfunction Grid:neighbors4(x, y)\n    local n = {}\n    for _, d in ipairs({{0,-1},{1,0},{0,1},{-1,0}}) do\n        local nx, ny = x+d[1], y+d[2]\n        if self:inBounds(nx, ny) then\n            table.insert(n, { x=nx, y=ny, val=self:get(nx,ny) })\n        end\n    end\n    return n\nend\n\nfunction Grid:forEach(fn)\n    for y = 1, self.rows do\n        for x = 1, self.cols do\n            fn(x, y, self._data[y][x])\n        end\n    end\nend\n\nreturn Grid\n",
+    "tags": ["gameplay", "grid", "tilemap", "data"]
+  },
+
+  {
+    "id": "networking-udp",
+    "title": "UDP Networking (enet)",
+    "category": "networking",
+    "description": "Basic host/client setup using LÖVE's built-in enet library for real-time multiplayer.",
+    "code": "-- SERVER (run in one instance)\nlocal enet = require(\"enet\")\nlocal host\n\nfunction love.load()\n    host = enet.host_create(\"*:6789\", 16)  -- max 16 peers\n    print(\"Server listening on port 6789\")\nend\n\nfunction love.update(dt)\n    local event = host:service(0)\n    while event do\n        if event.type == \"connect\" then\n            print(\"Client connected:\", event.peer)\n            event.peer:send(\"Welcome!\")\n        elseif event.type == \"receive\" then\n            print(\"Message from client:\", event.data)\n            -- Broadcast to all except sender\n            for i = 1, host:peer_count() do\n                local peer = host:get_peer(i)\n                if peer ~= event.peer then\n                    peer:send(event.data)\n                end\n            end\n        elseif event.type == \"disconnect\" then\n            print(\"Client disconnected\")\n        end\n        event = host:service(0)\n    end\nend\n\n--[[\n-- CLIENT (separate instance)\nlocal enet  = require(\"enet\")\nlocal host, server\n\nfunction love.load()\n    host   = enet.host_create()\n    server = host:connect(\"127.0.0.1:6789\")\nend\n\nfunction love.update(dt)\n    local event = host:service(0)\n    while event do\n        if event.type == \"connect\" then\n            print(\"Connected to server\")\n            event.peer:send(\"Hello server!\")\n        elseif event.type == \"receive\" then\n            print(\"Server says:\", event.data)\n        end\n        event = host:service(0)\n    end\nend\n\nfunction love.keypressed(key)\n    if server then server:send(\"key:\" .. key) end\nend\n]]\n",
+    "tags": ["networking", "udp", "enet", "multiplayer"]
+  },
+  {
+    "id": "networking-message-protocol",
+    "title": "Message Protocol",
+    "category": "networking",
+    "description": "Pack and unpack typed network messages into compact binary strings using string.pack/unpack.",
+    "code": "-- Messages.lua\n-- Define message type IDs\nlocal MSG = {\n    MOVE     = 1,\n    SHOOT    = 2,\n    HEALTH   = 3,\n    CHAT     = 4,\n    SPAWN    = 5,\n}\n\nlocal Messages = { types = MSG }\n\n-- MOVE: id(uint16), x(float), y(float), vx(float), vy(float)\nfunction Messages.encodeMOVE(id, x, y, vx, vy)\n    return string.pack(\">BHffff\", MSG.MOVE, id, x, y, vx, vy)\nend\n\nfunction Messages.decodeMOVE(data)\n    local _, id, x, y, vx, vy = string.unpack(\">BHffff\", data)\n    return { id=id, x=x, y=y, vx=vx, vy=vy }\nend\n\n-- SHOOT: id(uint16), angle(float)\nfunction Messages.encodeSHOOT(id, angle)\n    return string.pack(\">BHf\", MSG.SHOOT, id, angle)\nend\n\nfunction Messages.decodeSHOOT(data)\n    local _, id, angle = string.unpack(\">BHf\", data)\n    return { id=id, angle=angle }\nend\n\n-- HEALTH: id(uint16), hp(uint8)\nfunction Messages.encodeHEALTH(id, hp)\n    return string.pack(\">BHB\", MSG.HEALTH, id, math.floor(hp))\nend\n\n-- CHAT: id(uint16), message(string, null-terminated)\nfunction Messages.encodeCHAT(id, msg)\n    return string.pack(\">BHz\", MSG.CHAT, id, msg)\nend\n\nfunction Messages.decodeCHAT(data)\n    local _, id, msg = string.unpack(\">BHz\", data)\n    return { id=id, msg=msg }\nend\n\n-- Dispatch: read first byte to determine type, call handler\nfunction Messages.dispatch(data, handlers)\n    local msgType = string.byte(data, 1)\n    if msgType == MSG.MOVE   and handlers.onMove   then handlers.onMove(Messages.decodeMOVE(data))   end\n    if msgType == MSG.SHOOT  and handlers.onShoot  then handlers.onShoot(Messages.decodeSHOOT(data)) end\n    if msgType == MSG.CHAT   and handlers.onChat   then handlers.onChat(Messages.decodeCHAT(data))   end\nend\n\nreturn Messages\n\n-- Usage (client):\n-- peer:send(Messages.encodeMOVE(myID, player.x, player.y, player.vx, player.vy))\n--\n-- Usage (server receive):\n-- Messages.dispatch(event.data, {\n--     onMove  = function(m) players[m.id].x = m.x; players[m.id].y = m.y end,\n--     onShoot = function(m) spawnBullet(m.id, m.angle) end,\n--     onChat  = function(m) broadcastChat(m.id, m.msg) end,\n-- })\n",
+    "tags": ["networking", "protocol", "binary", "pack"]
+  },
+  {
+    "id": "networking-state-sync",
+    "title": "State Sync + Interpolation",
+    "category": "networking",
+    "description": "Server broadcasts world state at a fixed tick rate; clients buffer and interpolate between snapshots for smooth rendering.",
+    "code": "-- CLIENT SIDE\n-- Snapshot buffer — store last two received states\nlocal snapshots = {}   -- { time, entities: {id -> {x,y}} }\nlocal INTERP_DELAY = 0.1  -- render 100ms behind server\n\nlocal function receiveSnapshot(data)\n    -- data is a table decoded from network message\n    table.insert(snapshots, { time = data.serverTime, entities = data.entities })\n    -- Keep only last 3 snapshots\n    if #snapshots > 3 then table.remove(snapshots, 1) end\nend\n\nlocal function getInterpolated(renderTime)\n    -- Find two snapshots to interpolate between\n    local prev, next\n    for i = #snapshots, 2, -1 do\n        if snapshots[i-1].time <= renderTime and snapshots[i].time >= renderTime then\n            prev = snapshots[i-1]\n            next = snapshots[i]\n            break\n        end\n    end\n    if not prev or not next then\n        return snapshots[#snapshots] and snapshots[#snapshots].entities or {}\n    end\n    local t = (renderTime - prev.time) / (next.time - prev.time)\n    t = math.max(0, math.min(1, t))\n    local result = {}\n    for id, e in pairs(next.entities) do\n        local p = prev.entities[id]\n        if p then\n            result[id] = {\n                x = p.x + (e.x - p.x) * t,\n                y = p.y + (e.y - p.y) * t,\n            }\n        else\n            result[id] = e\n        end\n    end\n    return result\nend\n\nlocal serverTimeOffset = 0   -- calibrate with server clock sync\nlocal clientTime = 0\n\nfunction love.update(dt)\n    clientTime = clientTime + dt\n    -- receive and buffer incoming snapshots here...\nend\n\nfunction love.draw()\n    local renderTime = clientTime - INTERP_DELAY + serverTimeOffset\n    local state = getInterpolated(renderTime)\n    for id, e in pairs(state) do\n        love.graphics.rectangle(\"fill\", e.x, e.y, 24, 24)\n    end\nend\n\n-- SERVER SIDE (fixed tick)\n-- local TICK_RATE = 1/20   -- 20 ticks per second\n-- local tickTimer = 0\n-- function love.update(dt)\n--     world:update(dt)\n--     tickTimer = tickTimer + dt\n--     if tickTimer >= TICK_RATE then\n--         tickTimer = 0\n--         local snapshot = { serverTime=love.timer.getTime(), entities={} }\n--         for id, p in pairs(players) do\n--             snapshot.entities[id] = { x=p.x, y=p.y }\n--         end\n--         broadcastSnapshot(snapshot)\n--     end\n-- end\n",
+    "tags": ["networking", "sync", "interpolation", "snapshot"]
+  },
+  {
+    "id": "networking-http",
+    "title": "HTTP Request (luasocket)",
+    "category": "networking",
+    "description": "Fetch data from a REST API or web server using luasocket — runs in a thread to avoid blocking.",
+    "code": "-- main.lua\nlocal channel = love.thread.newChannel()\nlocal httpThread\n\nfunction love.load()\n    -- Spawn a background thread for the HTTP request\n    httpThread = love.thread.newThread([[\n        local http    = require(\"socket.http\")\n        local ltn12   = require(\"ltn12\")\n        local channel = ...\n\n        local body  = {}\n        local ok, code = http.request({\n            url    = \"https://httpbin.org/get?game=love\",\n            sink   = ltn12.sink.table(body),\n        })\n\n        if ok and code == 200 then\n            channel:push({ ok=true,  body=table.concat(body) })\n        else\n            channel:push({ ok=false, err=tostring(code) })\n        end\n    ]])\n    httpThread:start(channel)\nend\n\nlocal responseText = \"Fetching...\"\n\nfunction love.update(dt)\n    -- Non-blocking poll — check if thread finished\n    local result = channel:pop()\n    if result then\n        if result.ok then\n            responseText = result.body:sub(1, 200)  -- first 200 chars\n        else\n            responseText = \"Error: \" .. result.err\n        end\n    end\nend\n\nfunction love.draw()\n    love.graphics.printf(responseText, 20, 20, love.graphics.getWidth() - 40)\nend\n\n-- POST request example:\n-- local json = require(\"json\")\n-- http.request({\n--     url     = \"https://api.example.com/scores\",\n--     method  = \"POST\",\n--     headers = { [\"Content-Type\"]=\"application/json\",\n--                 [\"Content-Length\"]=tostring(#body) },\n--     source  = ltn12.source.string(json.encode({score=100,name=\"Hero\"})),\n--     sink    = ltn12.sink.table(response),\n-- })\n",
+    "tags": ["networking", "http", "luasocket", "thread", "api"]
+  },
+  {
+    "id": "networking-lobby",
+    "title": "Lobby / Room Pattern",
+    "category": "networking",
+    "description": "Server-side lobby where players join, pick a name, and the host starts the game when ready.",
+    "code": "-- SERVER\nlocal enet   = require(\"enet\")\nlocal host\nlocal lobby  = {}     -- peer -> { name, ready }\nlocal gameStarted = false\nlocal MAX_PLAYERS = 4\n\nlocal function broadcast(msg, except)\n    for peer, _ in pairs(lobby) do\n        if peer ~= except then peer:send(msg) end\n    end\nend\n\nlocal function lobbyList()\n    local names = {}\n    for _, info in pairs(lobby) do table.insert(names, info.name) end\n    return \"LOBBY:\" .. table.concat(names, \",\")\nend\n\nfunction love.load()\n    host = enet.host_create(\"*:6789\", MAX_PLAYERS)\n    print(\"Lobby open on :6789\")\nend\n\nfunction love.update(dt)\n    local event = host:service(0)\n    while event do\n        if event.type == \"connect\" then\n            if gameStarted or host:peer_count() > MAX_PLAYERS then\n                event.peer:send(\"REJECT:game_in_progress\")\n                event.peer:disconnect_later()\n            else\n                lobby[event.peer] = { name=\"Player\"..host:peer_count(), ready=false }\n                event.peer:send(\"WELCOME:\" .. lobby[event.peer].name)\n                broadcast(lobbyList())\n            end\n\n        elseif event.type == \"receive\" then\n            local info = lobby[event.peer]\n            if info then\n                if event.data:match(\"^NAME:\") then\n                    info.name  = event.data:sub(6, 20)\n                    broadcast(lobbyList())\n\n                elseif event.data == \"READY\" then\n                    info.ready = true\n                    broadcast(\"READY:\" .. info.name)\n                    -- Start when all players ready\n                    local allReady = true\n                    for _, p in pairs(lobby) do if not p.ready then allReady=false end end\n                    if allReady and host:peer_count() >= 2 then\n                        broadcast(\"START\")\n                        gameStarted = true\n                    end\n\n                elseif event.data == \"UNREADY\" then\n                    info.ready = false\n                end\n            end\n\n        elseif event.type == \"disconnect\" then\n            if lobby[event.peer] then\n                local name = lobby[event.peer].name\n                lobby[event.peer] = nil\n                broadcast(\"LEFT:\" .. name)\n                broadcast(lobbyList())\n            end\n        end\n        event = host:service(0)\n    end\nend\n\n-- CLIENT messages to handle:\n-- \"WELCOME:<name>\"  — assigned name\n-- \"LOBBY:<n1,n2>\"  — current player list\n-- \"READY:<name>\"   — player marked ready\n-- \"LEFT:<name>\"    — player disconnected\n-- \"START\"          — game begins, switch state\n-- \"REJECT:<reason>\"— couldn't join\n",
+    "tags": ["networking", "lobby", "multiplayer", "enet", "room"]
+  },
+
+  {
+    "id": "misc-json",
+    "title": "JSON Encode / Decode",
+    "category": "misc",
+    "description": "Minimal pure-Lua JSON encoder and decoder — no external library needed.",
+    "code": "-- json.lua  (minimal, handles strings, numbers, booleans, arrays, objects)\nlocal json = {}\n\nfunction json.encode(val)\n    local t = type(val)\n    if val == nil    then return \"null\"\n    elseif t == \"boolean\" then return tostring(val)\n    elseif t == \"number\"  then return tostring(val)\n    elseif t == \"string\"  then\n        return '\"' .. val:gsub('\\\\','\\\\\\\\'):gsub('\"','\\\\\"')\n                          :gsub('\\n','\\\\n'):gsub('\\r','\\\\r') .. '\"'\n    elseif t == \"table\" then\n        -- Array?\n        local isArr = #val > 0\n        local parts = {}\n        if isArr then\n            for _, v in ipairs(val) do table.insert(parts, json.encode(v)) end\n            return \"[\" .. table.concat(parts, \",\") .. \"]\"\n        else\n            for k, v in pairs(val) do\n                table.insert(parts, json.encode(tostring(k)) .. \":\" .. json.encode(v))\n            end\n            return \"{\" .. table.concat(parts, \",\") .. \"}\"\n        end\n    end\n    return \"null\"\nend\n\n-- For decoding, use a library like rxi/json.lua (battle-tested):\n-- https://github.com/rxi/json.lua  (single file, drop into project)\n-- local json = require(\"json\")\n-- local data = json.decode(love.filesystem.read(\"data.json\"))\n\nreturn json\n\n-- Usage:\n-- local json = require(\"json\")\n-- local str = json.encode({ score=100, name=\"Hero\", items={\"sword\",\"shield\"} })\n-- love.filesystem.write(\"save.json\", str)\n",
+    "tags": ["misc", "json", "encode", "decode"]
+  },
+  {
+    "id": "misc-signal",
+    "title": "Global Signal Bus",
+    "category": "misc",
+    "description": "App-wide event bus — any module can emit or subscribe without direct references.",
+    "code": "-- Signal.lua  (global singleton)\nlocal Signal = {}\nlocal _handlers = {}\n\nfunction Signal.on(name, fn)\n    if not _handlers[name] then _handlers[name] = {} end\n    table.insert(_handlers[name], fn)\n    -- Return unsubscribe handle\n    return function()\n        local list = _handlers[name]\n        for i = #list, 1, -1 do\n            if list[i] == fn then table.remove(list, i) end\n        end\n    end\nend\n\nfunction Signal.once(name, fn)\n    local unsub\n    unsub = Signal.on(name, function(...)\n        unsub()\n        fn(...)\n    end)\n    return unsub\nend\n\nfunction Signal.emit(name, ...)\n    for _, fn in ipairs(_handlers[name] or {}) do\n        fn(...)\n    end\nend\n\nfunction Signal.clear(name)\n    _handlers[name] = nil\nend\n\nreturn Signal\n\n-- Usage (any file, no circular deps):\n-- local Signal = require(\"Signal\")\n--\n-- -- Subscribe\n-- Signal.on(\"coin:collected\", function(value) score = score + value end)\n-- Signal.once(\"game:over\",    function() showGameOver() end)\n--\n-- -- Emit from anywhere\n-- Signal.emit(\"coin:collected\", 10)\n-- Signal.emit(\"game:over\")\n",
+    "tags": ["misc", "signal", "events", "bus", "decoupling"]
+  }
+]
