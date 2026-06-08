@@ -4,8 +4,21 @@ struct SceneCodeGenerator {
 
     // MARK: - Main Scene module
 
-    static func generateModule(config: SceneManagerConfig) -> String {
+    static func generateModule(config: SceneManagerConfig, mode: LanguageServerMode = .current) -> String {
         let mod     = luaIdent(config.moduleName.isEmpty ? "Scene" : config.moduleName)
+        let transitionEffectEnum = mode == .luaCATS ? "---@enum SceneTransitionEffect\nlocal SceneTransitionEffect = { none = \"none\", fade = \"fade\", pop = \"pop\", slideLeft = \"slide_left\", slideRight = \"slide_right\", slideUp = \"slide_up\", slideDown = \"slide_down\" }\n\n" : ""
+        let transitionEasingEnum = mode == .luaCATS ? "---@enum SceneTransitionEasing\nlocal SceneTransitionEasing = { linear = \"linear\", easeIn = \"ease_in\", easeOut = \"ease_out\", easeInOut = \"ease_in_out\", bounce = \"bounce\" }\n\n" : ""
+        let completeTriggerEnum  = mode == .luaCATS ? "---@enum SceneCompleteTrigger\nlocal SceneCompleteTrigger = { none = \"none\", timer = \"timer\", manual = \"manual\" }\n\n" : ""
+        let completeActionEnum   = mode == .luaCATS ? "---@enum SceneCompleteAction\nlocal SceneCompleteAction = { none = \"none\", switch_ = \"switch\", push = \"push\", pop = \"pop\" }\n\n" : ""
+        let classAnnotation    = mode == .luaCATS ? "---@class \(luaIdent(config.moduleName.isEmpty ? "Scene" : config.moduleName))\n" : ""
+        let loadAnnotation     = mode == .luaCATS ? "---@return nil\n" : ""
+        let updateAnnotation   = mode == .luaCATS ? "---@param dt number\n---@return nil\n" : ""
+        let drawAnnotation     = mode == .luaCATS ? "---@return nil\n" : ""
+        let switchAnnotation   = mode == .luaCATS ? "---@param name string\n---@return nil\n" : ""
+        let pushAnnotation     = mode == .luaCATS ? "---@param name string\n---@return nil\n" : ""
+        let popAnnotation      = mode == .luaCATS ? "---@return nil\n" : ""
+        let currentAnnotation  = mode == .luaCATS ? "---@return table?\n" : ""
+        let registerAnnotation = mode == .luaCATS ? "---@param name string\n---@param scene table\n---@return nil\n" : ""
         let initial = config.entries.first(where: { $0.isInitial }) ?? config.entries.first
 
         // require lines
@@ -141,7 +154,7 @@ struct SceneCodeGenerator {
 
 \(requireLines.isEmpty ? "-- (no scenes)" : requireLines)
 
-local \(mod) = {}
+\(transitionEffectEnum)\(transitionEasingEnum)\(completeTriggerEnum)\(completeActionEnum)\(classAnnotation)local \(mod) = {}
 
 local _stack  = {}   -- scene stack; top = current
 local _scenes = {}   -- registered scene tables
@@ -316,7 +329,7 @@ end
 -- \(mod):register(name, scene)
 -- Register a scene table under a string key.
 --------------------------------------------------------------------------------
-function \(mod):register(name, scene)
+\(registerAnnotation)function \(mod):register(name, scene)
     assert(type(scene) == "table", "[Scene] register() expects a table, got " .. type(scene))
     scene.__sceneKey = name
     _scenes[name] = scene
@@ -327,7 +340,7 @@ end
 -- \(mod):current() → scene | nil
 -- Returns the top-of-stack (active) scene.
 --------------------------------------------------------------------------------
-function \(mod):current()
+\(currentAnnotation)function \(mod):current()
     return _stack[#_stack]
 end
 
@@ -336,7 +349,7 @@ end
 -- Replace the entire stack with a single new scene.
 -- Calls :leave() on the old scene, :enter() on the new one.
 --------------------------------------------------------------------------------
-function \(mod):switch(name)
+\(switchAnnotation)function \(mod):switch(name)
     local prev = self:current()
     if prev and prev.leave then prev:leave() end
     local next = _scenes[name]
@@ -354,7 +367,7 @@ end
 -- Push a new scene on top of the stack (useful for pause/overlay screens).
 -- Calls :pause() on the previous scene (if defined), :enter() on the new one.
 --------------------------------------------------------------------------------
-function \(mod):push(name)
+\(pushAnnotation)function \(mod):push(name)
     local prev = self:current()
     if prev and prev.pause then prev:pause() end
     local next = _scenes[name]
@@ -371,7 +384,7 @@ end
 -- Remove the top scene from the stack.
 -- Calls :leave() on the popped scene, :resume() on the one below.
 --------------------------------------------------------------------------------
-function \(mod):pop()
+\(popAnnotation)function \(mod):pop()
     local prev = self:current()
     if prev and prev.leave then prev:leave() end
     table.remove(_stack)
@@ -386,7 +399,7 @@ end
 -- \(mod):load()
 -- Call once in love.load(). Registers all scenes and switches to the initial one.
 --------------------------------------------------------------------------------
-function \(mod):load()
+\(loadAnnotation)function \(mod):load()
 \(registerLines.isEmpty ? "    -- No scenes registered." : registerLines)
 \(initialSwitch)
     _armCompletion(self:current())
@@ -407,7 +420,7 @@ end
 -- \(mod):update(dt)
 -- Delegates to the current (top) scene only.
 --------------------------------------------------------------------------------
-function \(mod):update(dt)
+\(updateAnnotation)function \(mod):update(dt)
     if _transition then
         _transition.time = _transition.time + dt
         if _transition.time >= _transition.duration then
@@ -440,7 +453,7 @@ end
 -- \(mod):draw()
 -- Draws all stacked scenes bottom-to-top (so overlays appear on top).
 --------------------------------------------------------------------------------
-function \(mod):draw()
+\(drawAnnotation)function \(mod):draw()
     if _transition then
         local t = math.max(0, math.min(1, _transition.time / _transition.duration))
         if _transition.kind == "pop" then

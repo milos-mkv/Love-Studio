@@ -2,8 +2,20 @@ import Foundation
 
 struct UICodeGenerator {
 
-    static func generate(config: UIBuilderConfig) -> String {
+    static func generate(config: UIBuilderConfig, mode: LanguageServerMode = .current) -> String {
         let mod  = luaIdent(config.moduleName.isEmpty ? "UI" : config.moduleName)
+        let uiElementTypeEnum    = mode == .luaCATS ? "---@enum UIElementType\nlocal UIElementType = { button = \"button\", label = \"label\", slider = \"slider\", checkbox = \"checkbox\", radioButton = \"radioButton\", progressBar = \"progressBar\", panel = \"panel\", textInput = \"textInput\", image = \"image\", scrollBar = \"scrollBar\" }\n\n" : ""
+        let classAnnotation      = mode == .luaCATS ? "---@class \(luaIdent(config.moduleName.isEmpty ? "UI" : config.moduleName))\n" : ""
+        let loadAnnotation       = mode == .luaCATS ? "---@return nil\n" : ""
+        let updateAnnotation     = mode == .luaCATS ? "---@param dt number\n---@return nil\n" : ""
+        let drawAnnotation       = mode == .luaCATS ? "---@return nil\n" : ""
+        let mpAnnotation         = mode == .luaCATS ? "---@param x number\n---@param y number\n---@param btn integer\n---@return nil\n" : ""
+        let mrAnnotation         = mode == .luaCATS ? "---@param x number\n---@param y number\n---@param btn integer\n---@return nil\n" : ""
+        let mmAnnotation         = mode == .luaCATS ? "---@param x number\n---@param y number\n---@param dx number\n---@param dy number\n---@param istouch boolean\n---@return nil\n" : ""
+        let textInputAnnotation  = mode == .luaCATS ? "---@param t string\n---@return nil\n" : ""
+        let keyPressedAnnotation = mode == .luaCATS ? "---@param key string\n---@param scancode string\n---@param isrepeat boolean\n---@return nil\n" : ""
+        let keyRelAnnotation     = mode == .luaCATS ? "---@param key string\n---@param scancode string\n---@return nil\n" : ""
+        let wheelAnnotation      = mode == .luaCATS ? "---@param dx number\n---@param dy number\n---@return nil\n" : ""
         let elementCount = config.elements.count
 
         // Per-element state init + draw/update code
@@ -183,7 +195,7 @@ struct UICodeGenerator {
 -- Canvas: \(config.canvasWidth) × \(config.canvasHeight) px
 --------------------------------------------------------------------------------
 
-local \(mod) = {}
+\(uiElementTypeEnum)\(classAnnotation)local \(mod) = {}
 local utf8 = require("utf8")
 
 -- Event callbacks - assign a function to be notified when an element fires.
@@ -286,7 +298,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):load()
 --------------------------------------------------------------------------------
-function \(mod):load()
+\(loadAnnotation)function \(mod):load()
 \(usedFontMods.isEmpty
     ? "    -- No Font Manager modules linked."
     : "    -- Pre-load linked Font Manager modules\n" + usedFontMods.map { "    _getFontMod(\"\($0)\")" }.joined(separator: "\n"))
@@ -295,35 +307,35 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):update(dt)
 --------------------------------------------------------------------------------
-function \(mod):update(dt)
+\(updateAnnotation)function \(mod):update(dt)
 \(updateBody)
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):draw()
 --------------------------------------------------------------------------------
-function \(mod):draw()
+\(drawAnnotation)function \(mod):draw()
 \(drawBody)
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):mousepressed(x, y, btn)
 --------------------------------------------------------------------------------
-function \(mod):mousepressed(x, y, btn)
+\(mpAnnotation)function \(mod):mousepressed(x, y, btn)
 \(mousePressBody)
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):mousereleased(x, y, btn)
 --------------------------------------------------------------------------------
-function \(mod):mousereleased(x, y, btn)
+\(mrAnnotation)function \(mod):mousereleased(x, y, btn)
 \(mouseReleaseBody)
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):mousemoved(x, y, dx, dy, istouch)
 --------------------------------------------------------------------------------
-function \(mod):mousemoved(x, y, dx, dy, istouch)
+\(mmAnnotation)function \(mod):mousemoved(x, y, dx, dy, istouch)
 \(mouseMoveBody)
 end
 
@@ -331,7 +343,7 @@ end
 -- \(mod):textinput(t)
 -- Forward love.textinput events to focused text inputs.
 --------------------------------------------------------------------------------
-function \(mod):textinput(t)
+\(textInputAnnotation)function \(mod):textinput(t)
 \(textInputBody)
 end
 
@@ -339,21 +351,21 @@ end
 -- \(mod):keypressed(key, scancode, isrepeat)
 -- Handles generated keyboard behavior, especially for text inputs.
 --------------------------------------------------------------------------------
-function \(mod):keypressed(key, scancode, isrepeat)
+\(keyPressedAnnotation)function \(mod):keypressed(key, scancode, isrepeat)
 \(keyPressedBody)
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):keyreleased(key, scancode)
 --------------------------------------------------------------------------------
-function \(mod):keyreleased(key, scancode)
+\(keyRelAnnotation)function \(mod):keyreleased(key, scancode)
 \(keyReleasedBody)
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):wheelmoved(dx, dy)
 --------------------------------------------------------------------------------
-function \(mod):wheelmoved(dx, dy)
+\(wheelAnnotation)function \(mod):wheelmoved(dx, dy)
 \(wheelMovedBody)
 end
 

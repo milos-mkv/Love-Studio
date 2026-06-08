@@ -2,8 +2,31 @@ import Foundation
 
 struct AudioCodeGenerator {
 
-    static func generate(config: AudioManagerConfig) -> String {
+    static func generate(config: AudioManagerConfig, mode: LanguageServerMode = .current) -> String {
         let mod = luaIdent(config.managerName.isEmpty ? "Audio" : config.managerName)
+        let sourceTypeEnum        = mode == .luaCATS ? "---@enum AudioSourceType\nlocal AudioSourceType = { static = \"static\", stream = \"stream\" }\n\n" : ""
+        let groupEnum             = mode == .luaCATS ? "---@enum AudioGroup\nlocal AudioGroup = { sfx = \"sfx\", music = \"music\", ambient = \"ambient\" }\n\n" : ""
+        let classAnnotation       = mode == .luaCATS ? "---@class \(luaIdent(config.managerName.isEmpty ? "Audio" : config.managerName))\n" : ""
+        let loadAnnotation        = mode == .luaCATS ? "---@return nil\n" : ""
+        let updateAnnotation      = mode == .luaCATS ? "---@param dt number\n---@return nil\n" : ""
+        let playAnnotation        = mode == .luaCATS ? "---@param name string\n---@param x number?\n---@param y number?\n---@return love.Source?\n" : ""
+        let playAtAnnotation      = mode == .luaCATS ? "---@param name string\n---@param x number\n---@param y number\n---@return love.Source?\n" : ""
+        let fadeOutAnnotation     = mode == .luaCATS ? "---@param name string\n---@return nil\n" : ""
+        let crossfadeAnnotation   = mode == .luaCATS ? "---@param fromName string\n---@param toName string\n---@param duration number\n---@return nil\n" : ""
+        let listenerAnnotation    = mode == .luaCATS ? "---@param x number\n---@param y number\n---@return nil\n" : ""
+        let stopAnnotation        = mode == .luaCATS ? "---@param name string\n---@return nil\n" : ""
+        let pauseAnnotation       = mode == .luaCATS ? "---@param name string\n---@return nil\n" : ""
+        let isPlayingAnnotation   = mode == .luaCATS ? "---@param name string\n---@return boolean\n" : ""
+        let setVolumeAnnotation   = mode == .luaCATS ? "---@param name string\n---@param v number\n---@return nil\n" : ""
+        let setGroupVolAnnotation = mode == .luaCATS ? "---@param group string\n---@param v number\n---@return nil\n" : ""
+        let setMasterAnnotation   = mode == .luaCATS ? "---@param v number\n---@return nil\n" : ""
+        let applyGroupAnnotation  = mode == .luaCATS ? "---@return nil\n" : ""
+        let setFxAnnotation       = mode == .luaCATS ? "---@param name string\n---@param effectName string?\n---@return nil\n" : ""
+        let setFilterAnnotation   = mode == .luaCATS ? "---@param name string\n---@param filterType string?\n---@param volume number?\n---@param gain number?\n---@return nil\n" : ""
+        let stopAllAnnotation     = mode == .luaCATS ? "---@return nil\n" : ""
+        let pauseAllAnnotation    = mode == .luaCATS ? "---@return nil\n" : ""
+        let resumeAllAnnotation   = mode == .luaCATS ? "---@return nil\n" : ""
+        let unloadAnnotation      = mode == .luaCATS ? "---@return nil\n" : ""
         let mv  = fmt2(config.masterVolume)
         let sv  = fmt2(config.sfxVolume)
         let muv = fmt2(config.musicVolume)
@@ -199,7 +222,7 @@ struct AudioCodeGenerator {
 -- Group volumes: sfx=\(sv)  music=\(muv)  ambient=\(av)  master=\(mv)
 --------------------------------------------------------------------------------
 
-local \(mod) = {}
+\(sourceTypeEnum)\(groupEnum)\(classAnnotation)local \(mod) = {}
 
 local _sources   = {}
 local _groups = {
@@ -246,7 +269,7 @@ local _spatial = {
 --------------------------------------------------------------------------------
 -- \(mod):load()
 --------------------------------------------------------------------------------
-function \(mod):load()
+\(loadAnnotation)function \(mod):load()
 \(effectsBlock)\(loadBlock)\(groupVolMsg)
 end
 
@@ -254,7 +277,7 @@ end
 -- \(mod):update(dt)
 -- Must be called every frame from love.update(dt) for fades to work.
 --------------------------------------------------------------------------------
-function \(mod):update(dt)
+\(updateAnnotation)function \(mod):update(dt)
     for src, fade in pairs(_fades) do
         local step = fade.rate * dt
         if fade.vol < fade.target then
@@ -278,7 +301,7 @@ end
 -- Plays the named source. Pass x, y for spatial sources.
 -- Static sources are cloned so the same SFX can overlap.
 --------------------------------------------------------------------------------
-function \(mod):play(name, x, y)
+\(playAnnotation)function \(mod):play(name, x, y)
     local s = _sources[name]
     if not s then return end
 
@@ -349,7 +372,7 @@ end
 -- \(mod):playAt(name, x, y)  - spatial shorthand
 -- Equivalent to M:play(name, x, y). More readable for spatial sources.
 --------------------------------------------------------------------------------
-function \(mod):playAt(name, x, y)
+\(playAtAnnotation)function \(mod):playAt(name, x, y)
     return self:play(name, x, y)
 end
 
@@ -357,7 +380,7 @@ end
 -- \(mod):fadeOut(name)
 -- Fades out the source (or last instance) over fadeOutDuration seconds.
 --------------------------------------------------------------------------------
-function \(mod):fadeOut(name)
+\(fadeOutAnnotation)function \(mod):fadeOut(name)
     local fo = _fadeOut[name] or 0
     -- Try last tracked instance first
     local src
@@ -376,7 +399,7 @@ function \(mod):fadeOut(name)
 end
 
 --------------------------------------------------------------------------------
--- \(mod):crossfade(fromName, toName, duration)
+\(crossfadeAnnotation)-- \(mod):crossfade(fromName, toName, duration)
 -- Simultaneously fades out 'fromName' and fades in 'toName' over 'duration'
 -- seconds. Ideal for music transitions between scenes/levels.
 --
@@ -424,14 +447,14 @@ end
 -- Updates the OpenAL listener position for spatial audio.
 -- Call this every frame with your camera / player position.
 --------------------------------------------------------------------------------
-function \(mod):setListenerPosition(x, y)
+\(listenerAnnotation)function \(mod):setListenerPosition(x, y)
     love.audio.setPosition(x, y, 0)
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):stop(name)
 --------------------------------------------------------------------------------
-function \(mod):stop(name)
+\(stopAnnotation)function \(mod):stop(name)
     local s = _sources[name]
     if s then s:stop() end
 end
@@ -439,7 +462,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):pause(name)
 --------------------------------------------------------------------------------
-function \(mod):pause(name)
+\(pauseAnnotation)function \(mod):pause(name)
     local s = _sources[name]
     if s then s:pause() end
 end
@@ -447,7 +470,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):isPlaying(name) -> boolean
 --------------------------------------------------------------------------------
-function \(mod):isPlaying(name)
+\(isPlayingAnnotation)function \(mod):isPlaying(name)
     local s = _sources[name]
     return s ~= nil and s:isPlaying()
 end
@@ -455,7 +478,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):setVolume(name, v)
 --------------------------------------------------------------------------------
-function \(mod):setVolume(name, v)
+\(setVolumeAnnotation)function \(mod):setVolume(name, v)
     _baseVolume[name] = v
     local s = _sources[name]
     if s then
@@ -467,7 +490,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):setGroupVolume(group, v)
 --------------------------------------------------------------------------------
-function \(mod):setGroupVolume(group, v)
+\(setGroupVolAnnotation)function \(mod):setGroupVolume(group, v)
     _groups[group] = math.max(0, math.min(1, v))
     self:applyGroupVolumes()
 end
@@ -475,7 +498,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):setMasterVolume(v)
 --------------------------------------------------------------------------------
-function \(mod):setMasterVolume(v)
+\(setMasterAnnotation)function \(mod):setMasterVolume(v)
     _master = math.max(0, math.min(1, v))
     self:applyGroupVolumes()
 end
@@ -483,7 +506,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):applyGroupVolumes()
 --------------------------------------------------------------------------------
-function \(mod):applyGroupVolumes()
+\(applyGroupAnnotation)function \(mod):applyGroupVolumes()
     for name, s in pairs(_sources) do
         local g    = _group[name] or "sfx"
         local base = _baseVolume[name] or 1
@@ -492,7 +515,7 @@ function \(mod):applyGroupVolumes()
 end
 
 --------------------------------------------------------------------------------
--- \(mod):setSourceEffect(name, effectName)
+\(setFxAnnotation)-- \(mod):setSourceEffect(name, effectName)
 -- Attach or detach a named auxiliary effect from a source at runtime.
 -- Pass nil to remove all effects.
 --
@@ -512,7 +535,7 @@ function \(mod):setSourceEffect(name, effectName)
 end
 
 --------------------------------------------------------------------------------
--- \(mod):setSourceFilter(name, filterType, volume, gain)
+\(setFilterAnnotation)-- \(mod):setSourceFilter(name, filterType, volume, gain)
 -- Apply a lowpass or highpass filter directly on a source at runtime.
 --
 --   filterType  "lowpass"  or  "highpass"
@@ -543,20 +566,20 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):stopAll()
 --------------------------------------------------------------------------------
-function \(mod):stopAll()
+\(stopAllAnnotation)function \(mod):stopAll()
     for _, s in pairs(_sources) do s:stop() end
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):pauseAll() / \(mod):resumeAll()
 --------------------------------------------------------------------------------
-function \(mod):pauseAll()
+\(pauseAllAnnotation)function \(mod):pauseAll()
     for _, s in pairs(_sources) do
         if s:isPlaying() then s:pause() end
     end
 end
 
-function \(mod):resumeAll()
+\(resumeAllAnnotation)function \(mod):resumeAll()
     for _, s in pairs(_sources) do
         if s:isPaused() then s:play() end
     end
@@ -565,7 +588,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):unload()
 --------------------------------------------------------------------------------
-function \(mod):unload()
+\(unloadAnnotation)function \(mod):unload()
     for _, s in pairs(_sources) do s:stop(); s:release() end
     _sources   = {}
     _instances = {}
