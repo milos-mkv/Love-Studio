@@ -150,6 +150,7 @@ private struct EditorSettingsView: View {
     @AppStorage("editorAutoSave")             private var editorAutoSave: Bool = false
     @AppStorage("editorAutoSaveDelay")        private var editorAutoSaveDelay: Double = 2.0
     @AppStorage("editorAnnotationsEnabled")   private var annotationsEnabled: Bool = false
+    @AppStorage("editorDocHoverEnabled")      private var docHoverEnabled: Bool = true
     @State private var showDiagnosticSettings = false
 
     private let monoFonts: [String] = {
@@ -192,6 +193,7 @@ private struct EditorSettingsView: View {
                 Toggle("Highlight current line", isOn: $editorHighlightLine)
                 Toggle("Word wrap", isOn: $editorWordWrap)
                 Toggle("Auto-close brackets & quotes", isOn: $editorAutoCloseBraces)
+                Toggle("Show documentation on hover", isOn: $docHoverEnabled)
             } header: {
                 Label("Display", systemImage: "eye")
             }

@@ -35,6 +35,7 @@ struct LuaEditorView: NSViewRepresentable {
     // otherwise the static LoveAPI tables are used.
     var lspClient    : LSPClientService? = nil
     var lspDocumentURL: URL? = nil
+    var docHoverEnabled = true
     var diagnostics  : [LSPClientService.Diagnostic] = []
     // Reports the caret's 1-based (line, column) for the status bar.
     var onCursorChange: ((Int, Int) -> Void)? = nil
@@ -188,6 +189,7 @@ struct LuaEditorView: NSViewRepresentable {
         // LSP hover: give the text view the client + doc URL for mouse-rest hover.
         textView.lspClient = lspClient
         textView.lspDocumentURL = lspDocumentURL
+        textView.docHoverEnabled = docHoverEnabled
 
         // LSP diagnostics: squiggles + gutter markers (highest severity per line).
         textView.diagnostics = diagnostics
@@ -241,6 +243,7 @@ struct LuaEditorView: NSViewRepresentable {
 
         @objc func scrollDidChange(_ notification: Notification) {
             refreshMinimap()
+            HoverPanel.shared.dismiss()
         }
 
         func scheduleMinimapRefresh() {
@@ -394,6 +397,7 @@ struct LuaEditorView: NSViewRepresentable {
             isEditing = false
             scheduleMinimapRefresh()
             scheduleDidChange(realText)
+            HoverPanel.shared.dismiss()
 
             let newLength = tv.string.utf16.count
             let isInsertion = newLength > previousTextLength
@@ -870,6 +874,11 @@ final class LuaTextView: NSTextView {
 
     weak var lspClient: LSPClientService?
     var lspDocumentURL: URL?
+    var docHoverEnabled = true
+    private var hoverTrackingArea: NSTrackingArea?
+    private var hoverWorkItem: DispatchWorkItem?
+    private var lastHoverCharIndex: Int = NSNotFound   // char a popover is currently shown for
+    private var hoverPendingCharIndex: Int = NSNotFound // char the timer is scheduled for
 
     func editorFont(size: CGFloat? = nil) -> NSFont {
         let s = size ?? editorFontSize
@@ -882,6 +891,7 @@ final class LuaTextView: NSTextView {
     private var highlightTask: DispatchWorkItem?
 
     var isJsonFile: Bool { boundFileURL?.pathExtension.lowercased() == "json" }
+    var isLuaBuffer: Bool { boundFileURL?.pathExtension.lowercased() == "lua" }
     private var suppressDidChangeHandling = false
     private let deferredHighlightCharacterThreshold = 40_000
     private let plainTextModeCharacterThreshold = 120_000
@@ -1496,9 +1506,131 @@ final class LuaTextView: NSTextView {
                                      forCharacterRange: range)
             lm.addTemporaryAttribute(.underlineColor, value: color, forCharacterRange: range)
             squiggleRanges.append(range)
+            // Diagnostic message is shown via the unified hover panel (fireHover),
+            // not an NSToolTip — so there's a single combined box.
         }
     }
 
+    // Diagnostics whose range covers the given buffer character location.
+    private func diagnosticsCovering(bufferLocation loc: Int) -> [LSPClientService.Diagnostic] {
+        diagnostics.filter { diag in
+            guard let s = bufferLocation(realLine: diag.startLine, realCharacter: diag.startCharacter) else { return false }
+            let e = bufferLocation(realLine: diag.endLine, realCharacter: diag.endCharacter) ?? (s + 1)
+            return loc >= s && loc < max(e, s + 1)
+        }
+    }
+
+    // MARK: Hover
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area = hoverTrackingArea { removeTrackingArea(area) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        // Hover works with or without the language server (static fallback below),
+        // gated on the doc-hover setting, for Lua buffers only.
+        guard docHoverEnabled, isLuaBuffer,
+              let lm = layoutManager, let tc = textContainer, lm.numberOfGlyphs > 0 else { return }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let containerPoint = NSPoint(x: point.x - textContainerInset.width,
+                                     y: point.y - textContainerInset.height)
+        let charIndex = lm.characterIndexForGlyph(at: lm.glyphIndex(for: containerPoint, in: tc))
+
+        // Staying within the same token must NOT reset the timer — otherwise slow
+        // motion over a symbol keeps rescheduling and hover never fires. Only act
+        // when the hovered character actually changes.
+        if charIndex == hoverPendingCharIndex { return }
+        hoverPendingCharIndex = charIndex
+
+        hoverWorkItem?.cancel()
+        // Already showing this symbol's popover: nothing to do.
+        if charIndex == lastHoverCharIndex, HoverPanel.shared.isVisible { return }
+
+        let work = DispatchWorkItem { [weak self] in self?.fireHover(at: point) }
+        hoverWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        hoverWorkItem?.cancel()
+        lastHoverCharIndex = NSNotFound
+        hoverPendingCharIndex = NSNotFound
+        HoverPanel.shared.dismiss()
+    }
+
+    private func fireHover(at point: NSPoint) {
+        guard let lm = layoutManager, let tc = textContainer else { return }
+
+        let containerPoint = NSPoint(x: point.x - textContainerInset.width,
+                                     y: point.y - textContainerInset.height)
+        let glyphIndex = lm.glyphIndex(for: containerPoint, in: tc)
+        guard lm.numberOfGlyphs > 0 else { return }
+        let charIndex = lm.characterIndexForGlyph(at: glyphIndex)
+
+        // Don't re-request for the same symbol position.
+        if charIndex == lastHoverCharIndex, HoverPanel.shared.isVisible { return }
+        lastHoverCharIndex = charIndex
+
+        let glyphRange = lm.glyphRange(forCharacterRange: NSRange(location: charIndex, length: 1),
+                                       actualCharacterRange: nil)
+        var rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+        rect.origin.x += textContainerInset.width
+        rect.origin.y += textContainerInset.height
+        let screenRect = window?.convertToScreen(convert(rect, to: nil)) ?? .zero
+
+        let diagBlock = diagnosticsCovering(bufferLocation: charIndex)
+            .map { ($0.severity == .warning ? "Warning: " : "Error: ") + $0.message }
+            .joined(separator: "\n")
+
+        // Prefer the language server when running; otherwise static love_api docs.
+        if let url = lspDocumentURL, let client = lspClient, client.status == .active {
+            client.requestHover(url, line: hoverPosition(forBufferLocation: charIndex).line,
+                                character: hoverPosition(forBufferLocation: charIndex).character) { [weak self] markdown in
+                let docs = (markdown?.isEmpty == false) ? markdown : self?.staticDocMarkdown(charIndex: charIndex)
+                self?.presentCombinedHover(diagnostics: diagBlock, docs: docs, screenRect: screenRect)
+            }
+        } else {
+            presentCombinedHover(diagnostics: diagBlock, docs: staticDocMarkdown(charIndex: charIndex), screenRect: screenRect)
+        }
+    }
+
+    // Compose the single hover box: diagnostics on top, an HR, then docs below.
+    // HR only when both are present; dismiss if neither.
+    private func presentCombinedHover(diagnostics diagBlock: String, docs: String?, screenRect: NSRect) {
+        let hasDiag = !diagBlock.isEmpty
+        let hasDocs = (docs?.isEmpty == false)
+        guard hasDiag || hasDocs else { HoverPanel.shared.dismiss(); return }
+
+        var md = ""
+        if hasDiag { md += diagBlock }
+        if hasDiag && hasDocs { md += "\n\n---\n\n" }
+        if hasDocs { md += docs! }
+        HoverPanel.shared.show(markdown: md, anchorScreenRect: screenRect)
+    }
+
+    // Static docs markdown for the dotted symbol under the cursor, or nil.
+    private func staticDocMarkdown(charIndex: Int) -> String? {
+        let ns = string as NSString
+        guard charIndex < ns.length else { return nil }
+        func isSym(_ c: unichar) -> Bool {
+            (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 || c == 46
+        }
+        var start = charIndex, end = charIndex
+        while start > 0, isSym(ns.character(at: start - 1)) { start -= 1 }
+        while end < ns.length, isSym(ns.character(at: end)) { end += 1 }
+        guard end > start else { return nil }
+        let symbol = ns.substring(with: NSRange(location: start, length: end - start))
+        return LoveAPILoader.hoverMarkdown(for: symbol)
+    }
 
     // Buffer char location -> 0-based (line, char) in realText (LSP positions).
     // Counts newlines strictly before `loc`; the line containing the cursor is
@@ -1525,6 +1657,12 @@ final class LuaTextView: NSTextView {
     private var quickFixActions: [LSPClientService.CodeAction] = []
 
     override func rightMouseDown(with event: NSEvent) {
+        // A right-click opens a menu; the hover box must not linger over it.
+        hoverWorkItem?.cancel()
+        lastHoverCharIndex = NSNotFound
+        hoverPendingCharIndex = NSNotFound
+        HoverPanel.shared.dismiss()
+
         guard let lm = layoutManager, let tc = textContainer,
               let url = lspDocumentURL, let client = lspClient,
               client.status == .active, lm.numberOfGlyphs > 0 else {

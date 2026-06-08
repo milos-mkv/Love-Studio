@@ -422,6 +422,7 @@ private struct EditorAreaView: View {
     @AppStorage("editorAutoSave")        private var editorAutoSave: Bool = false
     @AppStorage("editorAutoSaveDelay")   private var editorAutoSaveDelay: Double = 2.0
     @AppStorage("editorAnnotationsEnabled") private var annotationsEnabled: Bool = false
+    @AppStorage("editorDocHoverEnabled")    private var docHoverEnabled: Bool = true
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -531,6 +532,7 @@ private struct EditorAreaView: View {
                             : nil,
                         lspClient: isLuaTextBuffer(item.url) ? lspClient : nil,
                         lspDocumentURL: isLuaTextBuffer(item.url) ? item.url : nil,
+                        docHoverEnabled: docHoverEnabled,
                         diagnostics: isLuaTextBuffer(item.url)
                             ? (lspClient?.diagnostics(for: item.url) ?? [])
                             : [],
