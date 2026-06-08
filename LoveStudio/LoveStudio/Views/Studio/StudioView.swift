@@ -14,6 +14,7 @@ struct StudioView: View {
     @State private var runner       = LoveRunner()
     @State private var gitService   = GitStatusService()
     @State private var debugServer  = DebugServer()
+    @State private var lspClient    = LSPClientService()
     @State private var breakpoints  = BreakpointManager()
     @State private var jumpToLine   : Int? = nil
     @State private var isDebugging  = false
@@ -22,11 +23,12 @@ struct StudioView: View {
     @State private var pausedFileURL : URL?   = nil
     @State private var fileWatcher  : FileWatcher? = nil
 
-    @AppStorage("runnerHotReload")      private var runnerHotReload: Bool   = true
-    @AppStorage("runnerHotReloadDelay") private var runnerHotReloadDelay: Double = 0.5
-    @AppStorage("runnerClearConsole")   private var runnerClearConsole: Bool = true
-    @AppStorage("runnerMaxLines")       private var runnerMaxLines: Int     = 2000
-    @AppStorage("runnerDebugPort")      private var runnerDebugPort: Int    = 8172
+    @AppStorage("runnerHotReload")          private var runnerHotReload: Bool   = true
+    @AppStorage("runnerHotReloadDelay")     private var runnerHotReloadDelay: Double = 0.5
+    @AppStorage("runnerClearConsole")       private var runnerClearConsole: Bool = true
+    @AppStorage("runnerMaxLines")           private var runnerMaxLines: Int     = 2000
+    @AppStorage("runnerDebugPort")          private var runnerDebugPort: Int    = 8172
+    @AppStorage("editorAnnotationsEnabled") private var annotationsEnabled: Bool = false
 
     init(projectURL: URL) {
         self.projectURL = projectURL
@@ -61,6 +63,7 @@ struct StudioView: View {
                            debugServer: debugServer,
                            isDebugging: isDebugging,
                            gitService: gitService,
+                           lspClient: lspClient,
                            onJump: { file, line in
                                guard let fileURL = findFile(named: file) else { return }
                                if activeTab?.url != fileURL {
@@ -90,6 +93,8 @@ struct StudioView: View {
         }
         .onAppear {
             gitService.attach(to: projectURL)
+            lspClient.mode = annotationsEnabled ? .luaCATS : .none
+            lspClient.attach(to: projectURL)
             setupDebugWiring()
             let watcher = FileWatcher(url: projectURL)
             watcher.onChange = { project.refresh() }
@@ -109,9 +114,30 @@ struct StudioView: View {
         .onChange(of: runnerClearConsole)   { _, _ in applyRunnerSettings() }
         .onChange(of: runnerMaxLines)       { _, _ in applyRunnerSettings() }
         .onChange(of: runnerDebugPort)      { _, _ in applyRunnerSettings() }
+        .onChange(of: annotationsEnabled) { _, enabled in
+            if enabled {
+                try? TemplateService.shared.writeLSPFiles(at: projectURL)
+                lspClient.mode = .luaCATS
+                lspClient.attach(to: projectURL)
+            } else {
+                TemplateService.shared.removeLSPFiles(at: projectURL)
+                lspClient.mode = .none
+                lspClient.detach()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .restartLanguageServer)) { _ in
+            lspClient.restart()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .diagnosticSeveritiesChanged)) { _ in
+            // Rewrite .luarc.json with the new severities and restart so the
+            // server re-reads its config.
+            TemplateService.shared.rewriteLuarc(at: projectURL)
+            lspClient.restart()
+        }
         .onDisappear {
             fileWatcher?.stop()
             fileWatcher = nil
+            lspClient.detach()
         }
     }
 
@@ -381,6 +407,7 @@ private struct EditorAreaView: View {
     var debugServer   : DebugServer? = nil
     var isDebugging  = false
     var gitService   : GitStatusService? = nil
+    var lspClient    : LSPClientService? = nil
     var onJump      : ((String, Int) -> Void)? = nil
 
     @AppStorage("appAppearance")         private var appAppearance: String = "system"
@@ -394,6 +421,8 @@ private struct EditorAreaView: View {
     @AppStorage("editorWordWrap")        private var editorWordWrap: Bool = false
     @AppStorage("editorAutoSave")        private var editorAutoSave: Bool = false
     @AppStorage("editorAutoSaveDelay")   private var editorAutoSaveDelay: Double = 2.0
+    @AppStorage("editorAnnotationsEnabled") private var annotationsEnabled: Bool = false
+    @AppStorage("editorDocHoverEnabled")    private var docHoverEnabled: Bool = true
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -411,6 +440,8 @@ private struct EditorAreaView: View {
     @State private var saveErrorMessage: String? = nil
     @State private var autoSaveTimer: Timer? = nil
     @State private var confViewAsLua: Bool = false
+    @State private var cursorLine: Int = 1
+    @State private var cursorColumn: Int = 1
     @State private var consolePanelHeight: CGFloat = 180
     @State private var dragStartHeight: CGFloat = 180
     @State private var isDragging = false
@@ -496,6 +527,19 @@ private struct EditorAreaView: View {
                         autoCloseBraces: editorAutoCloseBraces,
                         wordWrap: editorWordWrap,
                         onFontSizeChange: { editorFontSize = Double($0) },
+                        onTextChange: isLuaTextBuffer(item.url)
+                            ? { lspClient?.didChange(item.url, text: $0) }
+                            : nil,
+                        lspClient: isLuaTextBuffer(item.url) ? lspClient : nil,
+                        lspDocumentURL: isLuaTextBuffer(item.url) ? item.url : nil,
+                        docHoverEnabled: docHoverEnabled,
+                        diagnostics: isLuaTextBuffer(item.url)
+                            ? (lspClient?.diagnostics(for: item.url) ?? [])
+                            : [],
+                        onCursorChange: { line, col in
+                            cursorLine = line
+                            cursorColumn = col
+                        },
                         jumpToLine: jumpToLine,
                         breakpoints: breakpoints,
                         pausedLine: pausedFileURL == item.url ? pausedLine : nil,
@@ -521,6 +565,19 @@ private struct EditorAreaView: View {
                 }
             } else {
                 editorPlaceholder
+            }
+
+            // Editor status bar — code tabs only (absent in visual tool views,
+            // which aren't mounted inside EditorAreaView).
+            if let item = activeTab {
+                EditorStatusBar(
+                    fileURL: item.url,
+                    isLua: isLuaTextBuffer(item.url),
+                    annotationsEnabled: annotationsEnabled,
+                    cursorLine: cursorLine,
+                    cursorColumn: cursorColumn,
+                    lspClient: lspClient
+                )
             }
 
             // Console / Debug panel
@@ -556,6 +613,20 @@ private struct EditorAreaView: View {
         .onChange(of: worktreeRefreshToken) { _, _ in
             reloadOpenFilesFromDisk()
         }
+        .onChange(of: lspClient?.status) { _, status in
+            // Server became ready (e.g. annotations toggled on mid-session): open
+            // any already-loaded Lua tabs the keystroke/load paths missed.
+            guard status == .active else { return }
+            for tab in openTabs where isLuaTextBuffer(tab.url) {
+                lspOpenIfNeeded(tab.url)
+            }
+        }
+        .onChange(of: confViewAsLua) { _, asLua in
+            // conf.lua's mode toggle is a sync event: opening the Lua text buffer
+            // or closing it as the visual editor takes over.
+            guard let url = activeTab?.url, url.lastPathComponent == "conf.lua" else { return }
+            if asLua { lspOpenIfNeeded(url) } else { lspCloseIfNeeded(url) }
+        }
         .onChange(of: openTabs.map { TabSnapshot(id: $0.id, url: $0.url) }) { oldSnaps, newSnaps in
             // Detect URL changes (rename/move) and migrate textBuffers keys.
             // Match by stable tab ID so that add/remove operations never
@@ -566,6 +637,11 @@ private struct EditorAreaView: View {
                     if let text = textBuffers[oldURL] {
                         textBuffers[snap.url] = text
                         textBuffers.removeValue(forKey: oldURL)
+                    }
+                    // Rename/move: server keys by URI — close old, open new.
+                    if let lspClient, lspClient.isOpen(oldURL) {
+                        lspClient.didRename(from: oldURL, to: snap.url,
+                                            text: textBuffers[snap.url] ?? "")
                     }
                 }
             }
@@ -580,6 +656,27 @@ private struct EditorAreaView: View {
         }
     }
 
+    // MARK: LSP document sync
+
+    // A tab is a Lua text buffer the server should track when it's a .lua file
+    // and (for conf.lua) the Lua text view is mounted, not the visual editor.
+    private func isLuaTextBuffer(_ url: URL) -> Bool {
+        guard url.pathExtension.lowercased() == "lua" else { return false }
+        let isConf = url.lastPathComponent == "conf.lua" && !untitledURLs.contains(url)
+        if isConf { return confViewAsLua }  // only synced in "View as Lua" mode
+        return true
+    }
+
+    // Open this URL on the server if it qualifies and its text is loaded.
+    private func lspOpenIfNeeded(_ url: URL) {
+        guard let lspClient, isLuaTextBuffer(url), let text = textBuffers[url] else { return }
+        lspClient.didOpen(url, text: text)
+    }
+
+    private func lspCloseIfNeeded(_ url: URL) {
+        lspClient?.didClose(url)
+    }
+
     // MARK: Load / Save / Close
 
     private func loadActiveFile() {
@@ -592,7 +689,10 @@ private struct EditorAreaView: View {
         }
         DispatchQueue.global(qos: .userInitiated).async {
             let text = (try? String(contentsOf: item.url, encoding: .utf8)) ?? ""
-            DispatchQueue.main.async { textBuffers[item.url] = text }
+            DispatchQueue.main.async {
+                textBuffers[item.url] = text
+                lspOpenIfNeeded(item.url)
+            }
         }
     }
 
@@ -614,6 +714,9 @@ private struct EditorAreaView: View {
             DispatchQueue.main.async {
                 for (url, text) in refreshedBuffers {
                     textBuffers[url] = text
+                    // Keystroke didChange won't fire for an external swap; push
+                    // full text so the server doesn't keep stale pre-reload content.
+                    lspClient?.didChange(url, text: text)
                 }
             }
         }
@@ -640,6 +743,7 @@ private struct EditorAreaView: View {
         if isDebugging, item.url.pathExtension == "lua" {
             debugServer?.load(file: item.url.lastPathComponent, source: text)
         }
+        if isLuaTextBuffer(item.url) { lspClient?.didSave(item.url) }
     }
 
     private func showSavePanel(for item: ProjectItem, text: String) {
@@ -664,6 +768,7 @@ private struct EditorAreaView: View {
             textBuffers.removeValue(forKey: item.url)
             dirtyURLs.remove(item.url)
             untitledURLs.remove(item.url)
+            lspOpenIfNeeded(destURL)   // untitled buffer just became a real .lua file
             onFileSaved?(destURL)
         }
     }
@@ -691,6 +796,7 @@ private struct EditorAreaView: View {
     }
 
     private func discardTab(_ item: ProjectItem) {
+        lspCloseIfNeeded(item.url)
         textBuffers.removeValue(forKey: item.url)
         dirtyURLs.remove(item.url)
         untitledURLs.remove(item.url)
@@ -768,6 +874,142 @@ struct FileIconView: View {
         case "mp3", "ogg", "wav", "flac":                return .purple
         case "ttf", "otf":                               return .orange
         default:                                          return .secondary
+        }
+    }
+}
+
+// MARK: - Editor Status Bar
+
+// Thin VS Code-style strip at the bottom of the code-editing surface. Passive
+// indicator: LSP status (click for restart), line:col, language, diagnostics.
+// Uses the app's chrome tokens (.bar, separatorColor, GitToolbarPill idiom) and
+// semantic colors so it reads correctly in light/dark/system.
+private struct EditorStatusBar: View {
+    let fileURL: URL
+    let isLua: Bool
+    let annotationsEnabled: Bool
+    let cursorLine: Int
+    let cursorColumn: Int
+    var lspClient: LSPClientService? = nil
+
+    @State private var showLSPPopover = false
+
+    private var language: String {
+        switch fileURL.pathExtension.lowercased() {
+        case "lua": return "Lua"
+        case "json": return "JSON"
+        default: return fileURL.pathExtension.isEmpty ? "Plain Text" : fileURL.pathExtension.uppercased()
+        }
+    }
+
+    private var lspStatus: LSPClientService.Status { lspClient?.status ?? .inactive }
+
+    private var lspColor: Color {
+        switch lspStatus {
+        case .active:      return Color(NSColor.systemGreen)
+        case .starting:    return Color(NSColor.systemYellow)
+        case .unavailable: return Color(NSColor.systemRed)
+        case .inactive:    return Color(NSColor.secondaryLabelColor)
+        }
+    }
+
+    private var lspText: String {
+        switch lspStatus {
+        case .active:      return "Lua Language Server"
+        case .starting:    return "Lua Language Server…"
+        case .unavailable: return "Lua Language Server (unavailable)"
+        case .inactive:    return "Lua Language Server (off)"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // LSP status — only shown when the annotations feature is enabled.
+            // Reflects the real client state regardless of the active file type.
+            if annotationsEnabled {
+                Button { showLSPPopover = true } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "circle.fill")
+                            .font(.system(size: 7))
+                            .foregroundStyle(lspColor)
+                        Text(lspText)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(lspStatus == .unavailable
+                      ? "Language server unavailable — using built-in completion"
+                      : "Lua language server")
+                .popover(isPresented: $showLSPPopover, arrowEdge: .top) {
+                    lspPopover
+                }
+            }
+
+            Spacer()
+
+            // Diagnostics counts (errors / warnings)
+            if isLua, let counts = lspClient?.diagnosticCounts, counts.errors + counts.warnings > 0 {
+                HStack(spacing: 8) {
+                    if counts.errors > 0 {
+                        Label("\(counts.errors)", systemImage: "xmark.octagon.fill")
+                            .foregroundStyle(Color(NSColor.systemRed))
+                    }
+                    if counts.warnings > 0 {
+                        Label("\(counts.warnings)", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Color(NSColor.systemYellow))
+                    }
+                }
+                .font(.system(size: 11, weight: .medium))
+                .labelStyle(.titleAndIcon)
+            }
+
+            Text("Ln \(cursorLine), Col \(cursorColumn)")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+
+            Text(language)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 22)
+        .background(.bar)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color(NSColor.separatorColor)).frame(height: 0.5)
+        }
+    }
+
+    @ViewBuilder private var lspPopover: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Lua Language Server")
+                .font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 6) {
+                Image(systemName: "circle.fill").font(.system(size: 7)).foregroundStyle(lspColor)
+                Text(statusDescription).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Button("Restart Language Server") {
+                lspClient?.restart()
+                showLSPPopover = false
+            }
+            .controlSize(.small)
+            if !isLua {
+                Text("Active for Lua files in this project. The current file isn't Lua.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(width: 220)
+    }
+
+    private var statusDescription: String {
+        switch lspStatus {
+        case .active:      return "Active"
+        case .starting:    return "Starting…"
+        case .unavailable: return "Unavailable — using built-in completion"
+        case .inactive:    return "Off"
         }
     }
 }

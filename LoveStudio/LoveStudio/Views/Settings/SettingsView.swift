@@ -147,8 +147,11 @@ private struct EditorSettingsView: View {
     @AppStorage("editorAutoCloseBraces") private var editorAutoCloseBraces: Bool = true
     @AppStorage("editorHighlightLine")   private var editorHighlightLine: Bool = true
     @AppStorage("editorWordWrap")        private var editorWordWrap: Bool = false
-    @AppStorage("editorAutoSave")        private var editorAutoSave: Bool = false
-    @AppStorage("editorAutoSaveDelay")   private var editorAutoSaveDelay: Double = 2.0
+    @AppStorage("editorAutoSave")             private var editorAutoSave: Bool = false
+    @AppStorage("editorAutoSaveDelay")        private var editorAutoSaveDelay: Double = 2.0
+    @AppStorage("editorAnnotationsEnabled")   private var annotationsEnabled: Bool = false
+    @AppStorage("editorDocHoverEnabled")      private var docHoverEnabled: Bool = true
+    @State private var showDiagnosticSettings = false
 
     private let monoFonts: [String] = {
         let families = NSFontManager.shared.availableFontFamilies
@@ -190,6 +193,7 @@ private struct EditorSettingsView: View {
                 Toggle("Highlight current line", isOn: $editorHighlightLine)
                 Toggle("Word wrap", isOn: $editorWordWrap)
                 Toggle("Auto-close brackets & quotes", isOn: $editorAutoCloseBraces)
+                Toggle("Show documentation on hover", isOn: $docHoverEnabled)
             } header: {
                 Label("Display", systemImage: "eye")
             }
@@ -210,9 +214,117 @@ private struct EditorSettingsView: View {
             } header: {
                 Label("Saving", systemImage: "square.and.arrow.down")
             }
+            Section {
+                Toggle("Enable type annotations (LuaCATS)", isOn: $annotationsEnabled)
+                if annotationsEnabled {
+                    Text("Adds LuaCATS type annotation comments to generated Lua code and enables the language server.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    LabeledContent("Language server") {
+                        Button("Restart") {
+                            NotificationCenter.default.post(name: .restartLanguageServer, object: nil)
+                        }
+                        .controlSize(.small)
+                    }
+                    Button("Advanced…") { showDiagnosticSettings = true }
+                        .controlSize(.small)
+                }
+            } header: {
+                Label("Language Server", systemImage: "chevron.left.forwardslash.chevron.right")
+            } footer: {
+                if annotationsEnabled {
+                    Text("Restart applies to the active project window. The editor's status bar shows live server state.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
         .padding(.bottom, 8)
+        .sheet(isPresented: $showDiagnosticSettings) {
+            DiagnosticSeveritySettingsView()
+        }
+    }
+}
+
+// MARK: - Diagnostic severity settings
+
+private struct DiagnosticSeveritySettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var overrides: [String: DiagnosticSeverityLevel] = DiagnosticSeverityStore.load()
+    @State private var search = ""
+
+    private var filteredGroups: [(group: String, codes: [DiagnosticCode])] {
+        let matches = DiagnosticCatalog.all.filter {
+            search.isEmpty || $0.id.localizedCaseInsensitiveContains(search)
+        }
+        let byGroup = Dictionary(grouping: matches, by: \.group)
+        return byGroup.keys.sorted().map { ($0, byGroup[$0]!) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Diagnostic Severity").font(.headline)
+                Spacer()
+                Button("Reset to Defaults") {
+                    overrides = DiagnosticSeverityStore.appDefaults
+                }
+                .controlSize(.small)
+            }
+            .padding()
+
+            Divider()
+
+            List {
+                ForEach(filteredGroups, id: \.group) { entry in
+                    Section(entry.group) {
+                        ForEach(entry.codes) { code in
+                            HStack {
+                                Text(code.name)
+                                    .font(.system(size: 12, design: .monospaced))
+                                Spacer()
+                                Picker("", selection: bindingFor(code.id)) {
+                                    ForEach(DiagnosticSeverityLevel.allCases) { lvl in
+                                        Text(lvl.label).tag(Optional(lvl))
+                                    }
+                                    Text("Default").tag(Optional<DiagnosticSeverityLevel>.none)
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
+                                .frame(width: 110)
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $search, placement: .toolbar, prompt: "Filter diagnostics")
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Apply") {
+                    DiagnosticSeverityStore.save(overrides)
+                    NotificationCenter.default.post(name: .diagnosticSeveritiesChanged, object: nil)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 520, height: 560)
+    }
+
+    // Picker binds to an optional level; nil = use LuaLS default (no override).
+    private func bindingFor(_ code: String) -> Binding<DiagnosticSeverityLevel?> {
+        Binding(
+            get: { overrides[code] },
+            set: { newValue in
+                if let newValue { overrides[code] = newValue } else { overrides[code] = nil }
+            }
+        )
     }
 }
 

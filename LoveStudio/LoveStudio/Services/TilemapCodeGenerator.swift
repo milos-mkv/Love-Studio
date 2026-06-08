@@ -2,7 +2,31 @@ import Foundation
 
 struct TilemapCodeGenerator {
 
-    static func generate(config: TilemapConfig) -> String {
+    static func generate(config: TilemapConfig, mode: LanguageServerMode = .current) -> String {
+        let tilemapOriginEnum      = mode == .luaCATS ? "---@enum TilemapOrigin\nlocal TilemapOrigin = { topLeft = \"topLeft\", center = \"center\", bottomLeft = \"bottomLeft\" }\n\n" : ""
+        let tilePropertyTypeEnum   = mode == .luaCATS ? "---@enum TilePropertyType\nlocal TilePropertyType = { string = \"string\", int = \"int\", float = \"float\", bool = \"bool\" }\n\n" : ""
+        let layerTypeEnum          = mode == .luaCATS ? "---@enum LayerType\nlocal LayerType = { tile = \"tile\", object = \"object\" }\n\n" : ""
+        let classAnnotation        = mode == .luaCATS ? "---@class M\n" : ""
+        let loadAnnotation         = mode == .luaCATS ? "---@return nil\n" : ""
+        let updateAnnotation       = mode == .luaCATS ? "---@param dt number\n---@return nil\n" : ""
+        let drawAnnotation         = mode == .luaCATS ? "---@param ox number?\n---@param oy number?\n---@param scale number?\n---@return nil\n" : ""
+        let drawBgAnnotation       = mode == .luaCATS ? "---@param ox number?\n---@param oy number?\n---@param scale number?\n---@return nil\n" : ""
+        let drawFgAnnotation       = mode == .luaCATS ? "---@param ox number?\n---@param oy number?\n---@param scale number?\n---@return nil\n" : ""
+        let unloadAnnotation       = mode == .luaCATS ? "---@return nil\n" : ""
+        let getTileAnnotation      = mode == .luaCATS ? "---@param layerIndex integer\n---@param col integer\n---@param row integer\n---@return integer\n" : ""
+        let isInBoundsAnnotation   = mode == .luaCATS ? "---@param col integer\n---@param row integer\n---@return boolean\n" : ""
+        let isSolidAnnotation      = mode == .luaCATS ? "---@param col integer\n---@param row integer\n---@return boolean\n" : ""
+        let setVisibleAnnotation   = mode == .luaCATS ? "---@param name string\n---@param visible boolean\n---@return nil\n" : ""
+        let rebuildAnnotation      = mode == .luaCATS ? "---@return nil\n" : ""
+        let getTilePropAnnotation  = mode == .luaCATS ? "---@param gid integer\n---@param key string\n---@return any\n" : ""
+        let getObjsByTypeAnnot     = mode == .luaCATS ? "---@param typeName string\n---@return table[]\n" : ""
+        let getObjByNameAnnot      = mode == .luaCATS ? "---@param name string\n---@return table?\n" : ""
+        let worldToTileAnnotation  = mode == .luaCATS ? "---@param wx number\n---@param wy number\n---@return integer col, integer row\n" : ""
+        let tileToWorldAnnotation  = mode == .luaCATS ? "---@param col integer\n---@param row integer\n---@return number wx, number wy\n" : ""
+        let drawLayerAnnotation    = mode == .luaCATS ? "---@param layerIndex integer\n---@param ox number?\n---@param oy number?\n---@param scale number?\n---@return nil\n" : ""
+        let forEachTileAnnotation  = mode == .luaCATS ? "---@param layerIndex integer\n---@param fn fun(gid:integer,col:integer,row:integer,x:number,y:number)\n---@return nil\n" : ""
+        let drawDebugAnnotation    = mode == .luaCATS ? "---@param ox number?\n---@param oy number?\n---@param scale number?\n---@return nil\n" : ""
+
         let regularLayers   = config.layers.filter { !$0.isCollision }
         let collisionLayers = config.layers.filter {  $0.isCollision }
 
@@ -365,7 +389,7 @@ M.tileProperties = {
 --
 --------------------------------------------------------------------------------
 
-local M = {}
+\(tilemapOriginEnum)\(tilePropertyTypeEnum)\(layerTypeEnum)\(classAnnotation)local M = {}
 
 M.width    = \(config.mapWidth)
 M.height   = \(config.mapHeight)
@@ -408,7 +432,7 @@ local FLIP_BITS  = \(TilemapConfig.FLIP_BITS)
 -- M:load()
 -- Loads tileset images and builds SpriteBatches.  Call once in love.load().
 --------------------------------------------------------------------------------
-function M:load()
+\(loadAnnotation)function M:load()
     _images    = {}
     _quads     = {}
     _batches   = {}
@@ -519,7 +543,7 @@ end
 -- M:update(dt)
 -- Advances all tile animations.  Call every frame in love.update(dt).
 --------------------------------------------------------------------------------
-function M:update(dt)
+\(updateAnnotation)function M:update(dt)
     if not self.animations then return end
     for _, anim in ipairs(self.animations) do
         local st = _animState[anim.sourceGID]
@@ -546,7 +570,7 @@ end
 --   Map:draw(-camX, -camY)      -- with camera scroll
 --   Map:draw(-camX, -camY, 2)   -- camera + 2× zoom
 --------------------------------------------------------------------------------
-function M:draw(ox, oy, scale)
+\(drawAnnotation)function M:draw(ox, oy, scale)
     self:drawBackground(ox, oy, scale)
     self:drawForeground(ox, oy, scale)
 end
@@ -611,7 +635,7 @@ end
 -- Draws layers marked as background (foreground = false).
 -- Call this before drawing your player/entities.
 --------------------------------------------------------------------------------
-function M:drawBackground(ox, oy, scale)
+\(drawBgAnnotation)function M:drawBackground(ox, oy, scale)
     self:_drawLayers(false, ox, oy, scale)
 end
 
@@ -620,7 +644,7 @@ end
 -- Draws layers marked as foreground (foreground = true).
 -- Call this after drawing your player/entities.
 --------------------------------------------------------------------------------
-function M:drawForeground(ox, oy, scale)
+\(drawFgAnnotation)function M:drawForeground(ox, oy, scale)
     self:_drawLayers(true, ox, oy, scale)
 end
 
@@ -629,7 +653,7 @@ end
 -- Releases all GPU resources (images, sprite batches).
 -- Call when switching scenes or destroying the map.
 --------------------------------------------------------------------------------
-function M:unload()
+\(unloadAnnotation)function M:unload()
     for _, img in ipairs(_images) do img:release() end
     for _, layer in ipairs(_batches) do
         for _, entry in ipairs(layer.batches) do entry.batch:release() end
@@ -644,7 +668,7 @@ end
 -- Returns the tile GID at (col, row) on the given layer (1-based index).
 -- Returns -1 if the cell is empty or out of range.
 --------------------------------------------------------------------------------
-function M:getTile(layerIndex, col, row)
+\(getTileAnnotation)function M:getTile(layerIndex, col, row)
     local layer = self.layers[layerIndex]
     if not layer then return -1 end
     local idx = row * self.width + col + 1
@@ -664,14 +688,14 @@ M.solidOutOfBounds = true
 -- M:isInBounds(col, row) → boolean
 -- Returns true if (col, row) is a valid cell inside the map.
 --------------------------------------------------------------------------------
-function M:isInBounds(col, row)
+\(isInBoundsAnnotation)function M:isInBounds(col, row)
     return col >= 0 and row >= 0 and col < self.width and row < self.height
 end
 
 --------------------------------------------------------------------------------
 -- M:isSolid(col, row) → boolean
 --------------------------------------------------------------------------------
-function M:isSolid(col, row)
+\(isSolidAnnotation)function M:isSolid(col, row)
     if not self:isInBounds(col, row) then
         return self.solidOutOfBounds
     end
@@ -685,7 +709,7 @@ end
 -- Shows or hides a layer by name at runtime.
 --   Map:setLayerVisible("Foreground", false)
 --------------------------------------------------------------------------------
-function M:setLayerVisible(name, visible)
+\(setVisibleAnnotation)function M:setLayerVisible(name, visible)
     for li, layer in ipairs(self.layers) do
         if layer.name == name then
             layer.visible = visible
@@ -701,7 +725,7 @@ end
 --   Map.layers[1].tiles[ row * Map.width + col + 1 ] = newGID
 --   Map:rebuild()
 --------------------------------------------------------------------------------
-function M:rebuild()
+\(rebuildAnnotation)function M:rebuild()
     self:load()
 end
 
@@ -710,7 +734,7 @@ end
 -- Returns the custom property value for a tile GID, or nil if not set.
 --   local speed = Map:getTileProperty(gid, "speed")
 --------------------------------------------------------------------------------
-function M:getTileProperty(gid, key)
+\(getTilePropAnnotation)function M:getTileProperty(gid, key)
     local props = self.tileProperties and self.tileProperties[gid]
     if not props then return nil end
     for _, p in ipairs(props) do
@@ -726,7 +750,7 @@ end
 --   local coins = Map:getObjectsByType("coin")
 --   for _, c in ipairs(coins) do spawnCoin(c.x, c.y) end
 --------------------------------------------------------------------------------
-function M:getObjectsByType(typeName)
+\(getObjsByTypeAnnot)function M:getObjectsByType(typeName)
     local result = {}
     for _, layer in ipairs(self.layers) do
         if layer.layerType == "object" and layer.objects then
@@ -746,7 +770,7 @@ end
 --   local exit = Map:getObjectByName("exit_door")
 --   if exit then teleportPlayerTo(exit.x, exit.y) end
 --------------------------------------------------------------------------------
-function M:getObjectByName(name)
+\(getObjByNameAnnot)function M:getObjectByName(name)
     for _, layer in ipairs(self.layers) do
         if layer.layerType == "object" and layer.objects then
             for _, obj in ipairs(layer.objects) do
@@ -764,7 +788,7 @@ end
 -- Converts a world pixel position to tile cell coordinates.
 --   local col, row = Map:worldToTile(player.x, player.y)
 --------------------------------------------------------------------------------
-function M:worldToTile(wx, wy)
+\(worldToTileAnnotation)function M:worldToTile(wx, wy)
     local ox = self.originX or 0
     local oy = self.originY or 0
     local col = math.floor((wx - ox) / self.tileSize)
@@ -777,7 +801,7 @@ end
 -- Converts tile cell coordinates to world pixel position (top-left of cell).
 --   local wx, wy = Map:tileToWorld(col, row)
 --------------------------------------------------------------------------------
-function M:tileToWorld(col, row)
+\(tileToWorldAnnotation)function M:tileToWorld(col, row)
     local ox = self.originX or 0
     local oy = self.originY or 0
     return col * self.tileSize + ox, row * self.tileSize + oy
@@ -788,7 +812,7 @@ end
 -- Draws a single layer by its 1-based index (ignores foreground flag).
 --   Map:drawLayer(2, -camX, -camY)
 --------------------------------------------------------------------------------
-function M:drawLayer(layerIndex, ox, oy, scale)
+\(drawLayerAnnotation)function M:drawLayer(layerIndex, ox, oy, scale)
     local entry = _batches[layerIndex]
     if not entry then return end
     ox    = (ox or 0) + (self.originX or 0)
@@ -843,7 +867,7 @@ end
 --       if Map:getTileProperty(gid, "damage") then ... end
 --   end)
 --------------------------------------------------------------------------------
-function M:forEachTile(layerIndex, fn)
+\(forEachTileAnnotation)function M:forEachTile(layerIndex, fn)
     local layer = self.layers[layerIndex]
     if not layer or not layer.tiles then return end
     for idx, gid in ipairs(layer.tiles) do
@@ -874,7 +898,7 @@ M.debug = false
 --       Map:drawDebug(-camX, -camY)
 --   end
 --------------------------------------------------------------------------------
-function M:drawDebug(ox, oy, scale)
+\(drawDebugAnnotation)function M:drawDebug(ox, oy, scale)
     if not self.debug then return end
     ox    = (ox or 0) + (self.originX or 0)
     oy    = (oy or 0) + (self.originY or 0)

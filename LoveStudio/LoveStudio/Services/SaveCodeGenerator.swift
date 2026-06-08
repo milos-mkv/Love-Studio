@@ -2,8 +2,15 @@ import Foundation
 
 struct SaveCodeGenerator {
 
-    static func generate(config: SaveSystemConfig) -> String {
+    static func generate(config: SaveSystemConfig, mode: LanguageServerMode = .current) -> String {
         let mod      = luaIdent(config.moduleName.isEmpty ? "Save" : config.moduleName)
+        let saveFieldTypeEnum = mode == .luaCATS ? "---@enum SaveFieldType\nlocal SaveFieldType = { number = \"number\", string = \"string\", boolean = \"boolean\", table = \"table\" }\n\n" : ""
+        let classAnnotation  = mode == .luaCATS ? "---@class \(luaIdent(config.moduleName.isEmpty ? "Save" : config.moduleName))\n---@field data table\n" : ""
+        let loadAnnotation   = mode == .luaCATS ? "---@return nil\n" : ""
+        let saveAnnotation   = mode == .luaCATS ? "---@return nil\n" : ""
+        let resetAnnotation  = mode == .luaCATS ? "---@return nil\n" : ""
+        let deleteAnnotation = mode == .luaCATS ? "---@return nil\n" : ""
+        let existsAnnotation = mode == .luaCATS ? "---@return boolean\n" : ""
         let fileName = config.fileName.isEmpty ? "savegame" : config.fileName
         let fields   = config.fields
 
@@ -82,7 +89,7 @@ struct SaveCodeGenerator {
 -- Save file: \(fileName).json  (in love.filesystem)
 --------------------------------------------------------------------------------
 
-local \(mod) = {}
+\(saveFieldTypeEnum)\(classAnnotation)local \(mod) = {}
 
 --------------------------------------------------------------------------------
 -- Default values - restored on reset() or when a key is missing from disk
@@ -210,7 +217,7 @@ end
 -- Reads the save file from disk and merges with defaults.
 -- Safe to call even if no save file exists yet.
 --------------------------------------------------------------------------------
-function \(mod):load()
+\(loadAnnotation)function \(mod):load()
     -- Start from defaults
     self:reset()
     local raw = love.filesystem.read("\(fileName).json")
@@ -231,7 +238,7 @@ end
 -- Serialises data to JSON and writes to love.filesystem.
 -- Call this whenever you want to persist the current state.
 --------------------------------------------------------------------------------
-function \(mod):save()
+\(saveAnnotation)function \(mod):save()
     local encoded = json.encode(self.data)
     local ok, err = love.filesystem.write("\(fileName).json", encoded)
     if not ok then
@@ -244,7 +251,7 @@ end
 -- Resets all fields to their default values (does NOT delete the file on disk).
 -- Call save() afterwards if you want to persist the reset.
 --------------------------------------------------------------------------------
-function \(mod):reset()
+\(resetAnnotation)function \(mod):reset()
     self.data = {}
     for k, v in pairs(_defaults) do
         -- Deep-copy tables so each reset gets a fresh table, not a shared ref
@@ -262,7 +269,7 @@ end
 -- \(mod):delete()
 -- Removes the save file from disk and resets data to defaults.
 --------------------------------------------------------------------------------
-function \(mod):delete()
+\(deleteAnnotation)function \(mod):delete()
     love.filesystem.remove("\(fileName).json")
     self:reset()
 end
@@ -271,7 +278,7 @@ end
 -- \(mod):exists() → boolean
 -- Returns true if a save file exists on disk.
 --------------------------------------------------------------------------------
-function \(mod):exists()
+\(existsAnnotation)function \(mod):exists()
     return love.filesystem.getInfo("\(fileName).json") ~= nil
 end
 

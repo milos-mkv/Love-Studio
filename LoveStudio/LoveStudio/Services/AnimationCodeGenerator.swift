@@ -2,8 +2,25 @@ import Foundation
 
 struct AnimationCodeGenerator {
 
-    static func generate(config: SpriteAnimationConfig) -> String {
+    static func generate(config: SpriteAnimationConfig, mode: LanguageServerMode = .current) -> String {
         let module = luaIdent(config.moduleName.isEmpty ? "Animation" : config.moduleName)
+        let frameSelectionEnum  = mode == .luaCATS ? "---@enum AnimationFrameSelectionMode\nlocal AnimationFrameSelectionMode = { range = \"range\", manual = \"manual\" }\n\n" : ""
+        let classAnnotation     = mode == .luaCATS ? "---@class \(luaIdent(config.moduleName.isEmpty ? "Animation" : config.moduleName))\n" : ""
+        let loadAnnotation      = mode == .luaCATS ? "---@return nil\n" : ""
+        let newInstanceAnnot    = mode == .luaCATS ? "---@param animName string\n---@return {name:string,frame:integer,timer:number,playing:boolean,speed:number}\n" : ""
+        let updateAnnotation    = mode == .luaCATS ? "---@param inst table\n---@param dt number\n---@param onEvent function?\n---@param onComplete function?\n---@param onLoop function?\n---@return nil\n" : ""
+        let drawAnnotation      = mode == .luaCATS ? "---@param inst table\n---@param x number\n---@param y number\n---@param r number?\n---@param sx number?\n---@param sy number?\n---@param ox number?\n---@param oy number?\n---@return nil\n" : ""
+        let playAnnotation      = mode == .luaCATS ? "---@param inst table\n---@return nil\n" : ""
+        let pauseAnnotation     = mode == .luaCATS ? "---@param inst table\n---@return nil\n" : ""
+        let stopAnnotation      = mode == .luaCATS ? "---@param inst table\n---@return nil\n" : ""
+        let setAnimAnnotation   = mode == .luaCATS ? "---@param inst table\n---@param animName string\n---@return nil\n" : ""
+        let setSpeedAnnotation  = mode == .luaCATS ? "---@param inst table\n---@param speed number\n---@return nil\n" : ""
+        let getHitboxAnnot      = mode == .luaCATS ? "---@param inst table\n---@param label string?\n---@return {label:string,x:number,y:number,width:number,height:number}?\n" : ""
+        let getHitboxWorldAnnot = mode == .luaCATS ? "---@param inst table\n---@param wx number\n---@param wy number\n---@param sx number?\n---@param sy number?\n---@param label string?\n---@return {label:string,x:number,y:number,width:number,height:number}?\n" : ""
+        let getHitboxesAnnot    = mode == .luaCATS ? "---@param inst table\n---@return {label:string,x:number,y:number,width:number,height:number}[]\n" : ""
+        let getHitboxesWAnnot   = mode == .luaCATS ? "---@param inst table\n---@param wx number\n---@param wy number\n---@param sx number?\n---@param sy number?\n---@return {label:string,x:number,y:number,width:number,height:number}[]\n" : ""
+        let drawDebugAnnot      = mode == .luaCATS ? "---@param inst table\n---@param x number\n---@param y number\n---@param r number?\n---@param sx number?\n---@param sy number?\n---@return nil\n" : ""
+        let getNamesAnnot       = mode == .luaCATS ? "---@return string[]\n" : ""
         let safeModulePath = safeLuaModuleName(config.moduleName)
         let path = config.spriteSheetPath.isEmpty ? "images/spritesheet.png" : config.spriteSheetPath
         let frameWidth = max(1, config.frameWidth)
@@ -122,7 +139,7 @@ struct AnimationCodeGenerator {
 -- clip fps for that frame only. Frames without a duration use 1/fps.
 --------------------------------------------------------------------------------
 
-local \(module) = {}
+\(frameSelectionEnum)\(classAnnotation)local \(module) = {}
 
 \(module).imagePath = "\(path)"
 \(module).image = nil
@@ -160,7 +177,7 @@ end
 
 -- Loads the sprite sheet image and builds all quad regions.
 -- Call once in love.load() before creating any instances.
-function \(module):load()
+\(loadAnnotation)function \(module):load()
     self.image = love.graphics.newImage(self.imagePath)
     self.image:setFilter("nearest", "nearest")
 
@@ -191,7 +208,7 @@ end
 -- Each entity (player, enemy, etc.) needs its own instance.
 --   animName : string  - name of the clip to start on (e.g. "idle")
 -- Returns a table: { name, frame, timer, playing, speed }
-function \(module):newInstance(animName)
+\(newInstanceAnnot)function \(module):newInstance(animName)
     return { name = animName, frame = 1, timer = 0, playing = true, speed = 1.0 }
 end
 
@@ -204,7 +221,7 @@ end
 --                  onComplete(animName)
 --   onLoop     : function? - fired each time a looping animation wraps:
 --                  onLoop(animName, loopCount)
-function \(module):update(inst, dt, onEvent, onComplete, onLoop)
+\(updateAnnotation)function \(module):update(inst, dt, onEvent, onComplete, onLoop)
     local anim = self.animations[inst.name]
     if not anim or not inst.playing then return end
 
@@ -252,7 +269,7 @@ end
 --   sy   : number? - vertical scale     (default sx)
 --   ox   : number? - x origin offset    (default: module setting)
 --   oy   : number? - y origin offset    (default: module setting)
-function \(module):draw(inst, x, y, r, sx, sy, ox, oy)
+\(drawAnnotation)function \(module):draw(inst, x, y, r, sx, sy, ox, oy)
     local anim = self.animations[inst.name]
     if not anim then return end
 
@@ -276,19 +293,19 @@ end
 
 -- Resumes playback from the current frame.
 --   inst : table - instance returned by newInstance()
-function \(module):play(inst)
+\(playAnnotation)function \(module):play(inst)
     inst.playing = true
 end
 
 -- Pauses playback at the current frame without resetting it.
 --   inst : table - instance returned by newInstance()
-function \(module):pause(inst)
+\(pauseAnnotation)function \(module):pause(inst)
     inst.playing = false
 end
 
 -- Stops playback and resets the instance back to frame 1.
 --   inst : table - instance returned by newInstance()
-function \(module):stop(inst)
+\(stopAnnotation)function \(module):stop(inst)
     inst.playing = false
     inst.frame = 1
     inst.timer = 0
@@ -298,7 +315,7 @@ end
 -- Does nothing if the instance is already on that clip.
 --   inst     : table  - instance returned by newInstance()
 --   animName : string - name of the target clip (e.g. "run", "jump")
-function \(module):setAnimation(inst, animName)
+\(setAnimAnnotation)function \(module):setAnimation(inst, animName)
     if inst.name == animName then return end
     inst.name = animName
     inst.frame = 1
@@ -311,14 +328,14 @@ end
 -- Multiplies with the clip's own speed value.
 --   inst  : table  - instance returned by newInstance()
 --   speed : number - multiplier (1.0 = normal, 2.0 = double, 0.5 = half)
-function \(module):setSpeed(inst, speed)
+\(setSpeedAnnotation)function \(module):setSpeed(inst, speed)
     inst.speed = math.max(0, speed)
 end
 
 -- Returns the hitbox table for the current frame of the instance, or nil.
 -- The returned table has: { label, x, y, width, height }
 --   inst : table - instance returned by newInstance()
-function \(module):getHitbox(inst, label)
+\(getHitboxAnnot)function \(module):getHitbox(inst, label)
     local anim = self.animations[inst.name]
     if not anim or not anim.hitboxes then return nil end
     local frameIdx = inst.frame  -- 1-based
@@ -342,7 +359,7 @@ end
 --
 --   local hb = \(module):getHitboxWorld(p, x, y, 3, 3)
 --   if hb and collidesWithMap(hb.x, hb.y, hb.width, hb.height) then ... end
-function \(module):getHitboxWorld(inst, wx, wy, sx, sy, label)
+\(getHitboxWorldAnnot)function \(module):getHitboxWorld(inst, wx, wy, sx, sy, label)
     local hb = self:getHitbox(inst, label)
     if not hb then return nil end
     local scaleX = sx or 1
@@ -362,7 +379,7 @@ end
 --   sx, sy : number - scale of the entity (default 1)
 --
 --   local all = \(module):getHitboxesWorld(p, x, y, 3, 3)
-function \(module):getHitboxesWorld(inst, wx, wy, sx, sy)
+\(getHitboxesWAnnot)function \(module):getHitboxesWorld(inst, wx, wy, sx, sy)
     local all = self:getHitboxes(inst)
     local scaleX = sx or 1
     local scaleY = sy or sx or 1
@@ -381,7 +398,7 @@ end
 
 -- Returns all hitboxes for the current frame as an array.
 --   inst : table - instance returned by newInstance()
-function \(module):getHitboxes(inst)
+\(getHitboxesAnnot)function \(module):getHitboxes(inst)
     local anim = self.animations[inst.name]
     if not anim or not anim.hitboxes then return {} end
     local frameIdx = inst.frame
@@ -399,7 +416,7 @@ end
 --   inst  : table  - instance returned by newInstance()
 --   x, y  : number - same world position passed to draw()
 --   r, sx, sy : number? - same rotation/scale passed to draw() (default 0, 1, 1)
-function \(module):drawDebug(inst, x, y, r, sx, sy)
+\(drawDebugAnnot)function \(module):drawDebug(inst, x, y, r, sx, sy)
     if not self.debug then return end
     local anim = self.animations[inst.name]
     if not anim then return end
@@ -455,7 +472,7 @@ end
 
 -- Returns a sorted list of all clip names defined in this module.
 -- Useful for debugging or building a UI picker.
-function \(module):getAnimationNames()
+\(getNamesAnnot)function \(module):getAnimationNames()
     local names = {}
     for name, _ in pairs(self.animations) do
         names[#names + 1] = name

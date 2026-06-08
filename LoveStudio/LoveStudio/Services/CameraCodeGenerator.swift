@@ -2,7 +2,7 @@ import Foundation
 
 struct CameraCodeGenerator {
 
-    static func generate(config: CameraConfig) -> String {
+    static func generate(config: CameraConfig, mode: LanguageServerMode = .current) -> String {
         let mod  = luaIdent(config.moduleName.isEmpty ? "Camera" : config.moduleName)
         let lerp = fmt(config.lerpSpeed)
         let zlerp = fmt(config.zoomLerpSpeed)
@@ -67,6 +67,31 @@ struct CameraCodeGenerator {
             ? "--\n-- Deadzone: \(Int(config.deadzoneW)) × \(Int(config.deadzoneH)) px  (camera leads when target leaves box)"
             : "--\n-- Deadzone: disabled"
 
+        let annotations = mode == .luaCATS ? """
+---@class \(mod)
+---@field x number World x position of the camera centre
+---@field y number World y position of the camera centre
+---@field tx number Target x position (lerp destination)
+---@field ty number Target y position (lerp destination)
+---@field zoom number Current zoom level
+---@field targetZoom number Desired zoom level (lerped toward each frame)
+---@field rotation number Camera rotation in radians
+---@field _shakeMag number Current shake magnitude (internal)
+---@field _shakeX number Shake x offset this frame (internal)
+---@field _shakeY number Shake y offset this frame (internal)
+local \(mod) = {}
+
+""" : ""
+
+        let newAnnotation      = mode == .luaCATS ? "---@param x number?\n---@param y number?\n---@return \(mod)\n" : ""
+        let followAnnotation   = mode == .luaCATS ? "---@param obj number|{x:number,y:number}\n---@param y number?\n" : ""
+        let updateAnnotation   = mode == .luaCATS ? "---@param dt number\n" : ""
+        let shakeAnnotation    = mode == .luaCATS ? "---@param intensity number?\n" : ""
+        let setZoomAnnotation  = mode == .luaCATS ? "---@param z number\n" : ""
+        let snapToAnnotation   = mode == .luaCATS ? "---@param x number\n---@param y number\n" : ""
+        let toWorldAnnotation  = mode == .luaCATS ? "---@param sx number\n---@param sy number\n---@return number wx, number wy\n" : ""
+        let toScreenAnnotation = mode == .luaCATS ? "---@param wx number\n---@param wy number\n---@return number sx, number sy\n" : ""
+
         return """
 --------------------------------------------------------------------------------
 -- \(mod).lua
@@ -125,7 +150,7 @@ struct CameraCodeGenerator {
 --   round pixels : \(round)
 --------------------------------------------------------------------------------
 
-local \(mod) = {}
+\(annotations)local \(mod) = {}
 \(mod).__index = \(mod)
 
 -- ── Internal config ───────────────────────────────────────────────────────
@@ -138,7 +163,7 @@ local ROUND_PIXELS = \(round)
 -- \(mod).new(x, y) → camera
 -- Create a new camera, optionally pre-positioned at world coords (x, y).
 --------------------------------------------------------------------------------
-function \(mod).new(x, y)
+\(newAnnotation)function \(mod).new(x, y)
     local self = setmetatable({}, \(mod))
     self.x, self.y   = x or 0, y or 0
     self.tx, self.ty = self.x, self.y
@@ -156,7 +181,7 @@ end
 -- cam:follow(obj)  or  cam:follow(x, y)
 -- Set the follow target. Pass a table with .x/.y or two numbers.
 --------------------------------------------------------------------------------
-function \(mod):follow(obj, y)
+\(followAnnotation)function \(mod):follow(obj, y)
     if type(obj) == "number" then
         obj = { x = obj, y = y }
     end
@@ -167,7 +192,7 @@ end
 -- cam:update(dt)
 -- Call once per frame in love.update(dt).
 --------------------------------------------------------------------------------
-function \(mod):update(dt)
+\(updateAnnotation)function \(mod):update(dt)
     -- Lerp position toward target
     self.x = self.x + (self.tx - self.x) * LERP
     self.y = self.y + (self.ty - self.y) * LERP
@@ -219,7 +244,7 @@ end
 -- cam:shake(intensity)
 -- Trigger a screen shake. intensity = max pixel offset (default \(shakeInt)).
 --------------------------------------------------------------------------------
-function \(mod):shake(intensity)
+\(shakeAnnotation)function \(mod):shake(intensity)
     self._shakeMag = intensity or \(shakeInt)
 end
 
@@ -227,7 +252,7 @@ end
 -- cam:setZoom(z)
 -- Smoothly zoom to level z (1.0 = normal, 2.0 = 2×, 0.5 = half).
 --------------------------------------------------------------------------------
-function \(mod):setZoom(z)
+\(setZoomAnnotation)function \(mod):setZoom(z)
     self.targetZoom = math.max(0.1, z)
 end
 
@@ -235,7 +260,7 @@ end
 -- cam:snapTo(x, y)
 -- Instantly move camera to world position - no lerp.
 --------------------------------------------------------------------------------
-function \(mod):snapTo(x, y)
+\(snapToAnnotation)function \(mod):snapTo(x, y)
     self.x, self.y   = x, y
     self.tx, self.ty = x, y
 end
@@ -244,7 +269,7 @@ end
 -- cam:toWorld(sx, sy) → wx, wy
 -- Convert screen coordinates to world coordinates.
 --------------------------------------------------------------------------------
-function \(mod):toWorld(sx, sy)
+\(toWorldAnnotation)function \(mod):toWorld(sx, sy)
     local sw, sh = love.graphics.getDimensions()
     local wx = (sx - sw * 0.5) / self.zoom + self.x
     local wy = (sy - sh * 0.5) / self.zoom + self.y
@@ -255,7 +280,7 @@ end
 -- cam:toScreen(wx, wy) → sx, sy
 -- Convert world coordinates to screen coordinates.
 --------------------------------------------------------------------------------
-function \(mod):toScreen(wx, wy)
+\(toScreenAnnotation)function \(mod):toScreen(wx, wy)
     local sw, sh = love.graphics.getDimensions()
     local sx = (wx - self.x) * self.zoom + sw * 0.5
     local sy = (wy - self.y) * self.zoom + sh * 0.5

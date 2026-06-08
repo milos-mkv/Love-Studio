@@ -48,4 +48,37 @@ enum LoveAPILoader {
         }
         return api
     }()
+
+    // Full function name (e.g. "love.graphics.draw") -> its definition, for the
+    // static hover fallback used when the language server isn't running.
+    private static let functionsByName: [String: LoveFunction] = {
+        var map: [String: LoveFunction] = [:]
+        for module in api.modules {
+            for fn in module.functions {
+                map["love.\(module.name).\(fn.name)"] = fn
+            }
+        }
+        for cb in api.callbacks { map["love.\(cb.name)"] = cb }
+        return map
+    }()
+
+    // Markdown docs for a `love.*` symbol, or nil if unknown. Mirrors the shape
+    // of lua-language-server hover output (fenced signature + prose + params).
+    static func hoverMarkdown(for name: String) -> String? {
+        guard let fn = functionsByName[name] else { return nil }
+        var md = "```lua\n\(fn.signature)\n```\n\n\(fn.description)"
+        if !fn.parameters.isEmpty {
+            md += "\n"
+            for p in fn.parameters {
+                md += "\n@param `\(p.name)` *\(p.type)* — \(p.description)"
+            }
+        }
+        if !fn.returns.isEmpty {
+            md += "\n"
+            for r in fn.returns {
+                md += "\n@return *\(r.type)* — \(r.description)"
+            }
+        }
+        return md
+    }
 }

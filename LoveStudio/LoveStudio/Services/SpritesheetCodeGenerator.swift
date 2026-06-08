@@ -2,8 +2,16 @@ import Foundation
 
 struct SpritesheetCodeGenerator {
 
-    static func generate(config: SpritesheetConfig, packResult: PackResult) -> String {
+    static func generate(config: SpritesheetConfig, packResult: PackResult, mode: LanguageServerMode = .current) -> String {
         let mod     = luaIdent(config.projectName.isEmpty ? "Sprites" : config.projectName)
+        let classAnnotation      = mode == .luaCATS ? "---@class \(luaIdent(config.projectName.isEmpty ? "Sprites" : config.projectName))\n" : ""
+        let loadAnnotation       = mode == .luaCATS ? "---@return nil\n" : ""
+        let drawAnnotation       = mode == .luaCATS ? "---@param name string\n---@param x number\n---@param y number\n---@param r number?\n---@param sx number?\n---@param sy number?\n---@param ox number?\n---@param oy number?\n---@return nil\n" : ""
+        let drawCenteredAnnot    = mode == .luaCATS ? "---@param name string\n---@param x number\n---@param y number\n---@param r number?\n---@param sx number?\n---@param sy number?\n---@return nil\n" : ""
+        let getQuadAnnotation    = mode == .luaCATS ? "---@param name string\n---@return love.Quad?\n" : ""
+        let getAtlasAnnotation   = mode == .luaCATS ? "---@return love.Image?\n" : ""
+        let getSizeAnnotation    = mode == .luaCATS ? "---@param name string\n---@return number w, number h\n" : ""
+        let unloadAnnotation     = mode == .luaCATS ? "---@return nil\n" : ""
         let atlas   = config.atlasPath.isEmpty ? "sprites/atlas.png" : config.atlasPath
         let atW     = Int(packResult.atlasSize.width)
         let atH     = Int(packResult.atlasSize.height)
@@ -77,7 +85,7 @@ struct SpritesheetCodeGenerator {
 -- Atlas: \(atlas)
 --------------------------------------------------------------------------------
 
-local \(mod) = {}
+\(classAnnotation)local \(mod) = {}
 
 local _atlas = nil
 local _aw, _ah = 0, 0
@@ -86,7 +94,7 @@ local _quads = {}
 --------------------------------------------------------------------------------
 -- \(mod):load()
 --------------------------------------------------------------------------------
-function \(mod):load()
+\(loadAnnotation)function \(mod):load()
     _atlas = love.graphics.newImage("\(atlas)")
     _aw, _ah = _atlas:getDimensions()
 \(quadLines)
@@ -95,7 +103,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):draw(name, x, y [, r, sx, sy, ox, oy])
 --------------------------------------------------------------------------------
-function \(mod):draw(name, x, y, r, sx, sy, ox, oy)
+\(drawAnnotation)function \(mod):draw(name, x, y, r, sx, sy, ox, oy)
     local q = _quads[name]
     if q and _atlas then
         love.graphics.draw(_atlas, q, x, y, r or 0, sx or 1, sy or 1, ox or 0, oy or 0)
@@ -106,7 +114,7 @@ end
 -- \(mod):drawCentered(name, x, y [, r, sx, sy])
 -- Draws the sprite with origin at its center.
 --------------------------------------------------------------------------------
-function \(mod):drawCentered(name, x, y, r, sx, sy)
+\(drawCenteredAnnot)function \(mod):drawCentered(name, x, y, r, sx, sy)
     local q = _quads[name]
     if q and _atlas then
         local _, _, qw, qh = q:getViewport()
@@ -117,21 +125,21 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):getQuad(name) -> Quad | nil
 --------------------------------------------------------------------------------
-function \(mod):getQuad(name)
+\(getQuadAnnotation)function \(mod):getQuad(name)
     return _quads[name]
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):getAtlas() -> Image | nil
 --------------------------------------------------------------------------------
-function \(mod):getAtlas()
+\(getAtlasAnnotation)function \(mod):getAtlas()
     return _atlas
 end
 
 --------------------------------------------------------------------------------
 -- \(mod):getSize(name) -> w, h
 --------------------------------------------------------------------------------
-function \(mod):getSize(name)
+\(getSizeAnnotation)function \(mod):getSize(name)
     local q = _quads[name]
     if not q then return 0, 0 end
     local _, _, w, h = q:getViewport()
@@ -141,7 +149,7 @@ end
 --------------------------------------------------------------------------------
 -- \(mod):unload()
 --------------------------------------------------------------------------------
-function \(mod):unload()
+\(unloadAnnotation)function \(mod):unload()
     _atlas = nil
     _quads = {}
 end
