@@ -1,0 +1,23 @@
+# Local planning docs
+docs/
+
+# macOS
+.DS_Store
+
+# Xcode — build output
+build/
+DerivedData/
+
+# Xcode — per-user state (not shared)
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+
+# lua-language-server: fetched + extracted by Scripts/setup-language-server.sh.
+# Nothing about it lives in the repo — only the setup script.
+LoveStudio/Vendor/LuaLS/
+LoveStudio/Scripts/.cache/

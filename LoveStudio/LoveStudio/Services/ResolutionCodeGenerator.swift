@@ -2,8 +2,18 @@ import Foundation
 
 struct ResolutionCodeGenerator {
 
-    static func generate(config: ResolutionConfig) -> String {
+    static func generate(config: ResolutionConfig, mode: LanguageServerMode = .current) -> String {
         let mod  = luaIdent(config.moduleName.isEmpty ? "Resolution" : config.moduleName)
+        let scalingModeEnum   = mode == .luaCATS ? "---@enum ScalingMode\nlocal ScalingMode = { pixelPerfect = \"pixelPerfect\", letterbox = \"letterbox\", stretch = \"stretch\" }\n\n" : ""
+        let filterModeEnum    = mode == .luaCATS ? "---@enum FilterMode\nlocal FilterMode = { nearest = \"nearest\", linear = \"linear\" }\n\n" : ""
+        let classAnnotation   = mode == .luaCATS ? "---@class \(luaIdent(config.moduleName.isEmpty ? "Resolution" : config.moduleName))\n" : ""
+        let loadAnnotation    = mode == .luaCATS ? "---@return nil\n" : ""
+        let resizeAnnotation  = mode == .luaCATS ? "---@param w number\n---@param h number\n---@return nil\n" : ""
+        let beginAnnotation   = mode == .luaCATS ? "---@return nil\n" : ""
+        let finishAnnotation  = mode == .luaCATS ? "---@return nil\n" : ""
+        let toGameAnnotation  = mode == .luaCATS ? "---@param sx number\n---@param sy number\n---@return number gx, number gy\n" : ""
+        let getSizeAnnotation = mode == .luaCATS ? "---@return number w, number h\n" : ""
+        let getScaleAnnotation = mode == .luaCATS ? "---@return number\n" : ""
         let vw   = config.virtualWidth
         let vh   = config.virtualHeight
         let filt = config.filterMode.rawValue
@@ -111,7 +121,7 @@ struct ResolutionCodeGenerator {
 -- Filter: \(filt)  (\(filt == "nearest" ? "pixel-art sharp" : "smooth bilinear"))
 --------------------------------------------------------------------------------
 
-local \(mod) = {}
+\(scalingModeEnum)\(filterModeEnum)\(classAnnotation)local \(mod) = {}
 
 local VIRTUAL_W = \(vw)
 local VIRTUAL_H = \(vh)
@@ -126,7 +136,7 @@ local _ox, _oy = 0, 0\(extraVars)
 -- Creates the canvas and computes the initial scale.
 -- Call once in love.load().
 --------------------------------------------------------------------------------
-function \(mod):load()
+\(loadAnnotation)function \(mod):load()
     love.graphics.setDefaultFilter(FILTER, FILTER)
     _canvas = love.graphics.newCanvas(VIRTUAL_W, VIRTUAL_H)
     _canvas:setFilter(FILTER, FILTER)
@@ -138,7 +148,7 @@ end
 -- Recomputes scale and letterbox offsets when the window is resized.
 -- Call from love.resize(w, h).
 --------------------------------------------------------------------------------
-function \(mod):resize(w, h)
+\(resizeAnnotation)function \(mod):resize(w, h)
 \(resizeBody)end
 
 --------------------------------------------------------------------------------
@@ -146,7 +156,7 @@ function \(mod):resize(w, h)
 -- Redirects all drawing to the virtual canvas.
 -- Call at the start of love.draw().
 --------------------------------------------------------------------------------
-function \(mod):begin()
+\(beginAnnotation)function \(mod):begin()
     love.graphics.setCanvas(_canvas)
     love.graphics.clear()
 end
@@ -156,7 +166,7 @@ end
 -- Stops drawing to the canvas and scales it onto the screen.
 -- Call at the end of love.draw() (before any HUD drawn in screen coords).
 --------------------------------------------------------------------------------
-function \(mod):finish()
+\(finishAnnotation)function \(mod):finish()
     love.graphics.setCanvas()
     love.graphics.clear(0, 0, 0)
 \(drawCall)
@@ -166,7 +176,7 @@ end
 -- \(mod):toGame(sx, sy) → gx, gy
 -- Converts real screen coordinates (e.g. mouse position) to virtual game coords.
 --------------------------------------------------------------------------------
-function \(mod):toGame(sx, sy)
+\(toGameAnnotation)function \(mod):toGame(sx, sy)
 \(toGameBody)
 end
 
@@ -174,7 +184,7 @@ end
 -- \(mod):getVirtualSize() → w, h
 -- Returns the virtual canvas dimensions.
 --------------------------------------------------------------------------------
-function \(mod):getVirtualSize()
+\(getSizeAnnotation)function \(mod):getVirtualSize()
     return VIRTUAL_W, VIRTUAL_H
 end
 
@@ -182,7 +192,7 @@ end
 -- \(mod):getScale() → scale
 -- Returns the current scale factor (useful for drawing UI at a fixed size).
 --------------------------------------------------------------------------------
-function \(mod):getScale()
+\(getScaleAnnotation)function \(mod):getScale()
     return _scale
 end
 

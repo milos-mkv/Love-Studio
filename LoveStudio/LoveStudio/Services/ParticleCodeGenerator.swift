@@ -2,7 +2,7 @@ import Foundation
 
 struct ParticleCodeGenerator {
 
-    static func generate(config: ParticleSystemConfig) -> String {
+    static func generate(config: ParticleSystemConfig, mode: LanguageServerMode = .current) -> String {
         let ident      = luaIdent(config.name)
         // LÖVE setSpread() takes the full cone angle; the preview uses ±spreadDeg
         // (half-angle), so multiply by 2 to match visual output.
@@ -74,6 +74,18 @@ struct ParticleCodeGenerator {
             ? "\n    _ps:setEmissionArea(\"uniform\", \(fmt2(config.emitterRadius)), \(fmt2(config.emitterRadius)))"
             : ""
 
+        let particleShapeEnum       = mode == .luaCATS ? "---@enum ParticleShape\nlocal ParticleShape = { circle = \"circle\", square = \"square\", triangle = \"triangle\", star = \"star\", ring = \"ring\", diamond = \"diamond\" }\n\n" : ""
+        let particleEmitterShapeEnum = mode == .luaCATS ? "---@enum ParticleEmitterShape\nlocal ParticleEmitterShape = { point = \"point\", circle = \"circle\", line = \"line\", rect = \"rect\" }\n\n" : ""
+        let particleBlendModeEnum   = mode == .luaCATS ? "---@enum ParticleBlendMode\nlocal ParticleBlendMode = { alpha = \"alpha\", additive = \"add\" }\n\n" : ""
+        let classAnnotation   = mode == .luaCATS ? "---@class \(ident)\n" : ""
+        let loadAnnotation    = mode == .luaCATS ? "---@return nil\n" : ""
+        let updateAnnotation  = mode == .luaCATS ? "---@param dt number\n---@param x number?\n---@param y number?\n---@return nil\n" : ""
+        let drawAnnotation    = mode == .luaCATS ? "---@return nil\n" : ""
+        let isActiveAnnotation = mode == .luaCATS ? "---@return boolean\n" : ""
+        let stopAnnotation    = mode == .luaCATS ? "---@return nil\n" : ""
+        let unloadAnnotation  = mode == .luaCATS ? "---@return nil\n" : ""
+        let burstAnnotation   = mode == .luaCATS ? "---@param x number?\n---@param y number?\n---@return nil\n" : ""
+
         let burstHelpers = config.isBurst ? """
 
 
@@ -84,7 +96,7 @@ struct ParticleCodeGenerator {
 -- Call as many times as needed (e.g. on impact, explosion, button press).
 --   x, y  (optional) - world position; omit to reuse the last known position.
 --------------------------------------------------------------------------------
-function \(ident):burst(x, y)
+\(burstAnnotation)function \(ident):burst(x, y)
     if x and y then _ps:setPosition(x, y) end
     _ps:emit(\(config.burstCount))
 end
@@ -157,7 +169,7 @@ end
 --   :unload()        - release GPU resources when no longer needed
 --------------------------------------------------------------------------------
 
-local \(ident) = {}
+\(particleShapeEnum)\(particleEmitterShapeEnum)\(particleBlendModeEnum)\(classAnnotation)local \(ident) = {}
 
 -- Internal state - do not access directly from outside this module
 local _ps      = nil   -- love.graphics.ParticleSystem
@@ -168,7 +180,7 @@ local _texture = nil   -- love.graphics.Image (or Canvas)
 -- Creates the texture and particle system. Must be called once before any other
 -- method, typically inside love.load().
 --------------------------------------------------------------------------------
-function \(ident):load()
+\(loadAnnotation)function \(ident):load()
 \(textureBlock)
 
     _ps = love.graphics.newParticleSystem(_texture, \(config.maxParticles))
@@ -226,7 +238,7 @@ end
 -- already-living particles keep their own world positions (trailing effect).
 -- Call every frame from love.update(dt).
 --------------------------------------------------------------------------------
-function \(ident):update(dt, x, y)
+\(updateAnnotation)function \(ident):update(dt, x, y)
     if not _ps then return end
     if x and y then
         _ps:setPosition(x, y)
@@ -240,7 +252,7 @@ end
 -- Do NOT pass an offset here - positions are already in world space because
 -- the emitter was moved via :update(dt, x, y).
 --------------------------------------------------------------------------------
-function \(ident):draw()
+\(drawAnnotation)function \(ident):draw()
     if not _ps then return end
     local r, g, b, a = love.graphics.getColor()
 \(config.blendMode == .additive ? """
@@ -260,7 +272,7 @@ end
 -- Returns true while particles are still alive (useful for one-shot bursts to
 -- know when the effect has fully finished).
 --------------------------------------------------------------------------------
-function \(ident):isActive()
+\(isActiveAnnotation)function \(ident):isActive()
     return _ps ~= nil and (_ps:getCount() > 0 or _ps:isActive())
 end
 
@@ -269,7 +281,7 @@ end
 -- Stops emitting new particles. Already-living particles finish their lifetime.
 -- Call \(ident):load() again to restart from scratch.
 --------------------------------------------------------------------------------
-function \(ident):stop()
+\(stopAnnotation)function \(ident):stop()
     if _ps then _ps:stop() end
 end
 
@@ -277,7 +289,7 @@ end
 -- \(ident):unload()
 -- Releases GPU resources. Call when the effect is no longer needed.
 --------------------------------------------------------------------------------
-function \(ident):unload()
+\(unloadAnnotation)function \(ident):unload()
     if _ps      then _ps:release();      _ps      = nil end
     if _texture then _texture:release(); _texture = nil end
 end\(burstHelpers)

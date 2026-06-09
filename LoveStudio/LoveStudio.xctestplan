@@ -1,0 +1,30 @@
+{
+  "configurations" : [
+    {
+      "id" : "1339CC03-6CE1-48A6-8D13-797645F101C3",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:LoveStudio.xcodeproj",
+      "identifier" : "13E69ECD2FC5912A000B4418",
+      "name" : "LoveStudio"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:LoveStudio.xcodeproj",
+        "identifier" : "BB000001000000000000AA00",
+        "name" : "Tests"
+      }
+    }
+  ],
+  "version" : 1
+}

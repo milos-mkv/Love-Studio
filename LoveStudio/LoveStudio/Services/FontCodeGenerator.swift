@@ -2,8 +2,19 @@ import Foundation
 
 struct FontCodeGenerator {
 
-    static func generate(config: FontManagerConfig) -> String {
+    static func generate(config: FontManagerConfig, mode: LanguageServerMode = .current) -> String {
         let mod = luaIdent(config.moduleName.isEmpty ? "Fonts" : config.moduleName)
+        let fontSourceEnum    = mode == .luaCATS ? "---@enum FontSource\nlocal FontSource = { default = \"default\", file = \"file\", imageFont = \"imageFont\" }\n\n" : ""
+        let classAnnotation   = mode == .luaCATS ? "---@class \(luaIdent(config.moduleName.isEmpty ? "Fonts" : config.moduleName))\n" : ""
+        let loadAnnotation    = mode == .luaCATS ? "---@return nil\n" : ""
+        let getAnnotation     = mode == .luaCATS ? "---@param name string\n---@return love.Font?\n" : ""
+        let setAnnotation     = mode == .luaCATS ? "---@param name string\n---@return nil\n" : ""
+        let restoreAnnotation = mode == .luaCATS ? "---@return nil\n" : ""
+        let printAnnotation   = mode == .luaCATS ? "---@param name string\n---@param text string\n---@param x number\n---@param y number\n---@return nil\n" : ""
+        let printfAnnotation  = mode == .luaCATS ? "---@param name string\n---@param text string\n---@param x number\n---@param y number\n---@param limit number\n---@param align string?\n---@return nil\n" : ""
+        let widthAnnotation   = mode == .luaCATS ? "---@param name string\n---@param text string\n---@return number\n" : ""
+        let heightAnnotation  = mode == .luaCATS ? "---@param name string\n---@return number\n" : ""
+        let unloadAnnotation  = mode == .luaCATS ? "---@return nil\n" : ""
 
         // Load lines - one per entry
         let loadLines = config.entries.map { e -> String in
@@ -99,7 +110,7 @@ struct FontCodeGenerator {
 -- -------------------------------------------------------
 --------------------------------------------------------------------------------
 
-local \(mod) = {}
+\(fontSourceEnum)\(classAnnotation)local \(mod) = {}
 
 local _fonts    = {}
 local _outlines = {}
@@ -109,7 +120,7 @@ local _prevFont = nil
 -- \(mod):load()
 -- Call once in love.load(). Loads all font files from disk.
 --------------------------------------------------------------------------------
-function \(mod):load()
+\(loadAnnotation)function \(mod):load()
 \(loadLines.isEmpty ? "    -- No fonts configured." : loadLines)
 \(outlineLines.isEmpty ? "" : "\n    -- Outline data\n" + outlineLines)
 end
@@ -118,7 +129,7 @@ end
 -- \(mod):get(name) → Font | nil
 -- Returns the Font object for the given name, or nil if not loaded.
 --------------------------------------------------------------------------------
-function \(mod):get(name)
+\(getAnnotation)function \(mod):get(name)
     return _fonts[name]
 end
 
@@ -127,7 +138,7 @@ end
 -- Sets the named font as the active LÖVE font.
 -- Saves the previously active font so it can be restored with :restore().
 --------------------------------------------------------------------------------
-function \(mod):set(name)
+\(setAnnotation)function \(mod):set(name)
     local f = _fonts[name]
     if f then
         _prevFont = love.graphics.getFont()
@@ -141,7 +152,7 @@ end
 -- \(mod):restore()
 -- Restores the font that was active before the last :set() call.
 --------------------------------------------------------------------------------
-function \(mod):restore()
+\(restoreAnnotation)function \(mod):restore()
     if _prevFont then
         love.graphics.setFont(_prevFont)
         _prevFont = nil
@@ -152,7 +163,7 @@ end
 -- \(mod):print(name, text, x, y [, r, sx, sy, ox, oy, kx, ky])
 -- Draws text using the named font, with outline if configured.
 --------------------------------------------------------------------------------
-function \(mod):print(name, text, x, y, r, sx, sy, ox, oy, kx, ky)
+\(printAnnotation)function \(mod):print(name, text, x, y, r, sx, sy, ox, oy, kx, ky)
     local ol = _outlines[name]
     if ol then
         local cr, cg, cb, ca = love.graphics.getColor()
@@ -178,7 +189,7 @@ end
 -- Draws wrapped/aligned text using the named font, with outline if configured.
 -- align: "left" | "center" | "right" | "justify"  (default "left")
 --------------------------------------------------------------------------------
-function \(mod):printf(name, text, x, y, limit, align)
+\(printfAnnotation)function \(mod):printf(name, text, x, y, limit, align)
     local ol = _outlines[name]
     if ol then
         local cr, cg, cb, ca = love.graphics.getColor()
@@ -203,7 +214,7 @@ end
 -- \(mod):getWidth(name, text) → number
 -- Returns the pixel width of text rendered with the named font.
 --------------------------------------------------------------------------------
-function \(mod):getWidth(name, text)
+\(widthAnnotation)function \(mod):getWidth(name, text)
     local f = _fonts[name]
     return f and f:getWidth(text) or 0
 end
@@ -212,7 +223,7 @@ end
 -- \(mod):getHeight(name) → number
 -- Returns the line height of the named font in pixels.
 --------------------------------------------------------------------------------
-function \(mod):getHeight(name)
+\(heightAnnotation)function \(mod):getHeight(name)
     local f = _fonts[name]
     return f and f:getHeight() or 0
 end
@@ -221,7 +232,7 @@ end
 -- \(mod):unload()
 -- Releases all font objects (frees GPU memory).
 --------------------------------------------------------------------------------
-function \(mod):unload()
+\(unloadAnnotation)function \(mod):unload()
     _fonts = {}
 end
 

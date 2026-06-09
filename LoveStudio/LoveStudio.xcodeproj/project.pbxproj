@@ -6,14 +6,53 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		BB000004000000000000AA01 /* LuaLS in Copy Language Server */ = {isa = PBXBuildFile; fileRef = BB000004000000000000AA00 /* LuaLS */; };
+		BB000005000000000000AA01 /* LuaCATS in Copy Language Server */ = {isa = PBXBuildFile; fileRef = BB000005000000000000AA00 /* LuaCATS */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		BB000001000000000000AA06 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 13E69EC62FC59129000B4418 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 13E69ECD2FC5912A000B4418;
+			remoteInfo = LoveStudio;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BB000004000000000000AA02 /* Copy Language Server */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				BB000004000000000000AA01 /* LuaLS in Copy Language Server */,
+				BB000005000000000000AA01 /* LuaCATS in Copy Language Server */,
+			);
+			name = "Copy Language Server";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		13E69ECE2FC5912A000B4418 /* LoveStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LoveStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B279A0D92FD607AA0061B785 /* LoveStudio.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = LoveStudio.xctestplan; sourceTree = "<group>"; };
+		BB000001000000000000AA01 /* Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB000004000000000000AA00 /* LuaLS */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LuaLS; path = Vendor/LuaLS; sourceTree = "<group>"; };
+		BB000005000000000000AA00 /* LuaCATS */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LuaCATS; path = Vendor/LuaCATS; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		13E69ED02FC5912A000B4418 /* LoveStudio */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = LoveStudio;
+			sourceTree = "<group>";
+		};
+		BB000001000000000000AA02 /* Tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Tests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -26,13 +65,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BB000001000000000000AA03 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		13E69EC52FC59129000B4418 = {
 			isa = PBXGroup;
 			children = (
+				B279A0D92FD607AA0061B785 /* LoveStudio.xctestplan */,
 				13E69ED02FC5912A000B4418 /* LoveStudio */,
+				BB000001000000000000AA02 /* Tests */,
+				BB000004000000000000AA00 /* LuaLS */,
+				BB000005000000000000AA00 /* LuaCATS */,
 				13E69ECF2FC5912A000B4418 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +91,7 @@
 			isa = PBXGroup;
 			children = (
 				13E69ECE2FC5912A000B4418 /* LoveStudio.app */,
+				BB000001000000000000AA01 /* Tests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,6 +106,7 @@
 				13E69ECA2FC5912A000B4418 /* Sources */,
 				13E69ECB2FC5912A000B4418 /* Frameworks */,
 				13E69ECC2FC5912A000B4418 /* Resources */,
+				BB000004000000000000AA02 /* Copy Language Server */,
 			);
 			buildRules = (
 			);
@@ -70,6 +122,28 @@
 			productReference = 13E69ECE2FC5912A000B4418 /* LoveStudio.app */;
 			productType = "com.apple.product-type.application";
 		};
+		BB000001000000000000AA00 /* Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB000001000000000000AA08 /* Build configuration list for PBXNativeTarget "Tests" */;
+			buildPhases = (
+				BB000001000000000000AA04 /* Sources */,
+				BB000001000000000000AA03 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BB000001000000000000AA07 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				BB000001000000000000AA02 /* Tests */,
+			);
+			name = Tests;
+			packageProductDependencies = (
+			);
+			productName = Tests;
+			productReference = BB000001000000000000AA01 /* Tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +156,10 @@
 				TargetAttributes = {
 					13E69ECD2FC5912A000B4418 = {
 						CreatedOnToolsVersion = 26.5;
+					};
+					BB000001000000000000AA00 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 13E69ECD2FC5912A000B4418;
 					};
 				};
 			};
@@ -100,6 +178,7 @@
 			projectRoot = "";
 			targets = (
 				13E69ECD2FC5912A000B4418 /* LoveStudio */,
+				BB000001000000000000AA00 /* Tests */,
 			);
 		};
 /* End PBXProject section */
@@ -122,7 +201,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BB000001000000000000AA04 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		BB000001000000000000AA07 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 13E69ECD2FC5912A000B4418 /* LoveStudio */;
+			targetProxy = BB000001000000000000AA06 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13E69ED72FC5912A000B4418 /* Debug */ = {
@@ -179,7 +273,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -237,7 +331,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -337,6 +431,54 @@
 			};
 			name = Release;
 		};
+		BB000001000000000000AA05 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.milos-mkv.LoveStudio.Tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LoveStudio.app/Contents/MacOS/LoveStudio";
+			};
+			name = Debug;
+		};
+		BB000001000000000000AA09 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.milos-mkv.LoveStudio.Tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LoveStudio.app/Contents/MacOS/LoveStudio";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -354,6 +496,15 @@
 			buildConfigurations = (
 				13E69EDA2FC5912A000B4418 /* Debug */,
 				13E69EDB2FC5912A000B4418 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BB000001000000000000AA08 /* Build configuration list for PBXNativeTarget "Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB000001000000000000AA05 /* Debug */,
+				BB000001000000000000AA09 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

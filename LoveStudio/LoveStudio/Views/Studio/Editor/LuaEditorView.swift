@@ -6,6 +6,10 @@ import AppKit
 extension Notification.Name {
     static let insertSnippet     = Notification.Name("LoveStudio.insertSnippet")
     static let editorSearchAction = Notification.Name("LoveStudio.editorSearchAction")
+    // Posted by Settings' "Restart Language Server" button; observed by StudioView.
+    static let restartLanguageServer = Notification.Name("LoveStudio.restartLanguageServer")
+    // Posted when diagnostic-severity overrides change; StudioView rewrites .luarc.json.
+    static let diagnosticSeveritiesChanged = Notification.Name("LoveStudio.diagnosticSeveritiesChanged")
 }
 
 // MARK: - LuaEditorView (NSViewRepresentable)
@@ -25,6 +29,16 @@ struct LuaEditorView: NSViewRepresentable {
     var wordWrap           = false
     var autoFocus          = true
     var onFontSizeChange: ((CGFloat) -> Void)?
+    // Debounced full-text push for LSP didChange (Lua tabs only; nil otherwise).
+    var onTextChange: ((String) -> Void)?
+    // When set and the server is active, language features route through LSP;
+    // otherwise the static LoveAPI tables are used.
+    var lspClient    : LSPClientService? = nil
+    var lspDocumentURL: URL? = nil
+    var docHoverEnabled = true
+    var diagnostics  : [LSPClientService.Diagnostic] = []
+    // Reports the caret's 1-based (line, column) for the status bar.
+    var onCursorChange: ((Int, Int) -> Void)? = nil
     var jumpToLine   : Binding<Int?> = .constant(nil)
     var breakpoints  : BreakpointManager? = nil
     var pausedLine   : Int? = nil
@@ -176,6 +190,21 @@ struct LuaEditorView: NSViewRepresentable {
         textView.lineNumberRuler?.coverageHit = coverageHit
         textView.lineNumberRuler?.coverageMiss = coverageMiss
 
+        // LSP hover: give the text view the client + doc URL for mouse-rest hover.
+        textView.lspClient = lspClient
+        textView.lspDocumentURL = lspDocumentURL
+        textView.docHoverEnabled = docHoverEnabled
+
+        // LSP diagnostics: squiggles + gutter markers (highest severity per line).
+        textView.diagnostics = diagnostics
+        var gutter: [Int: LSPClientService.DiagnosticSeverity] = [:]
+        for d in diagnostics {
+            let line = d.startLine + 1   // realText 0-based -> gutter 1-based
+            if let existing = gutter[line], existing.rawValue <= d.severity.rawValue { continue }
+            gutter[line] = d.severity
+        }
+        textView.lineNumberRuler?.diagnosticLines = gutter
+
         if let line = jumpToLine.wrappedValue {
             jumpToLine.wrappedValue = nil
             DispatchQueue.main.async {
@@ -201,6 +230,7 @@ struct LuaEditorView: NSViewRepresentable {
         private var completionWorkItem: DispatchWorkItem?
         private var previousTextLength = 0
         private var minimapWorkItem: DispatchWorkItem?
+        private var didChangeWorkItem: DispatchWorkItem?
         private var cachedMinimapSource: String = ""
         private var cachedMinimapLines: [NSAttributedString] = []
         private var lastHighlightedLineRect: NSRect = .zero
@@ -215,12 +245,25 @@ struct LuaEditorView: NSViewRepresentable {
 
         // MARK: Minimap sync
 
-        @objc func scrollDidChange(_ notification: Notification) { refreshMinimap() }
+        @objc func scrollDidChange(_ notification: Notification) {
+            refreshMinimap()
+            HoverPanel.shared.dismiss()
+        }
 
         func scheduleMinimapRefresh() {
             minimapWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in self?.refreshMinimap() }
             minimapWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+        }
+
+        // Debounced LSP didChange — sibling of the minimap refresh (GCD, no async).
+        // No-op when onTextChange is nil (non-Lua tabs / LSP off).
+        func scheduleDidChange(_ text: String) {
+            guard parent.onTextChange != nil else { return }
+            didChangeWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.parent.onTextChange?(text) }
+            didChangeWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
         }
 
@@ -275,6 +318,7 @@ struct LuaEditorView: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView,
                   let lm = tv.layoutManager else { return }
+            reportCursorPosition(tv)
             // Invalidate previous and current line so the highlight moves cleanly
             if let lm = tv.layoutManager, lm.numberOfGlyphs > 0 {
                 let sel = tv.selectedRange()
@@ -352,9 +396,12 @@ struct LuaEditorView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard !isEditing, let tv = notification.object as? NSTextView else { return }
             isEditing = true
-            text.wrappedValue = (tv as? LuaTextView)?.realText ?? tv.string
+            let realText = (tv as? LuaTextView)?.realText ?? tv.string
+            text.wrappedValue = realText
             isEditing = false
             scheduleMinimapRefresh()
+            scheduleDidChange(realText)
+            HoverPanel.shared.dismiss()
 
             let newLength = tv.string.utf16.count
             let isInsertion = newLength > previousTextLength
@@ -368,6 +415,24 @@ struct LuaEditorView: NSViewRepresentable {
             }
 
             triggerSignatureHint(for: tv)
+        }
+
+        // Reports the caret's 1-based (line, column) in realText space.
+        private func reportCursorPosition(_ tv: NSTextView) {
+            guard let onCursor = parent.onCursorChange else { return }
+            let ltv = tv as? LuaTextView
+            let bufLoc = tv.selectedRange().location
+            let realLoc = ltv?.realLocation(forBufferLocation: bufLoc) ?? bufLoc
+            let text = (ltv?.realText ?? tv.string) as NSString
+            let loc = min(realLoc, text.length)
+            var line = 1
+            var lineStart = 0
+            text.enumerateSubstrings(in: NSRange(location: 0, length: loc),
+                                     options: [.byLines, .substringNotRequired]) { _, _, enclosing, _ in
+                line += 1
+                lineStart = enclosing.location + enclosing.length
+            }
+            onCursor(line, loc - lineStart + 1)
         }
 
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -445,8 +510,39 @@ struct LuaEditorView: NSViewRepresentable {
             guard prefixLen >= 2 else { CompletionPanel.shared.dismiss(); return }
 
             let prefix = str.substring(with: NSRange(location: start, length: prefixLen))
+            let insertStart = start
 
-            // Build suggestions
+            // LSP path: ask the server, fall back to static tables on empty.
+            if lspActive {
+                let work = DispatchWorkItem { [weak self, weak tv] in
+                    guard let self, let tv, let url = self.parent.lspDocumentURL else { return }
+                    let pos = self.lspPosition(for: sel.location, in: tv)
+                    self.parent.lspClient?.requestCompletion(url, line: pos.line, character: pos.character) { [weak self, weak tv] results in
+                        guard let self, let tv else { return }
+                        if results.isEmpty {
+                            self.showStaticCompletion(prefix: prefix, insertStart: insertStart, sel: sel, tv: tv)
+                            return
+                        }
+                        let suggestions = results.map { CompletionSuggestion(label: $0.label, insert: $0.insertText) }
+                        self.presentCompletion(suggestions, prefix: prefix, insertStart: insertStart, sel: sel, tv: tv)
+                    }
+                }
+                completionWorkItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+                return
+            }
+
+            // Static path (LSP off / inactive).
+            let work = DispatchWorkItem { [weak self, weak tv] in
+                guard let self, let tv else { return }
+                self.showStaticCompletion(prefix: prefix, insertStart: insertStart, sel: sel, tv: tv)
+            }
+            completionWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+        }
+
+        // Build suggestions from the static LoveAPI/keyword tables and present them.
+        private func showStaticCompletion(prefix: String, insertStart: Int, sel: NSRange, tv: NSTextView) {
             var suggestions: [CompletionSuggestion] = []
             let word = prefix.components(separatedBy: ".").last ?? prefix
 
@@ -461,48 +557,91 @@ struct LuaEditorView: NSViewRepresentable {
                     }
             }
 
-            // Deduplicate
             var seen = Set<String>()
             suggestions = suggestions.filter { seen.insert($0.label).inserted }
 
-            // Don't show if typed word is already exact
             let isExact = suggestions.contains(where: { $0.label == prefix || $0.insert == prefix })
             guard !suggestions.isEmpty && !isExact else {
                 CompletionPanel.shared.dismiss(); return
             }
+            presentCompletion(suggestions, prefix: prefix, insertStart: insertStart, sel: sel, tv: tv)
+        }
 
-            // Store insertion start for accept handler
-            let insertStart = start
+        // Show/update the panel with the given suggestions (shared by both paths).
+        private func presentCompletion(_ suggestions: [CompletionSuggestion],
+                                       prefix: String, insertStart: Int, sel: NSRange, tv: NSTextView) {
+            guard !suggestions.isEmpty else { CompletionPanel.shared.dismiss(); return }
+            let cursorScreenRect = tv.firstRect(forCharacterRange: sel, actualRange: nil)
 
-            let work = DispatchWorkItem { [weak self, weak tv] in
+            CompletionPanel.shared.onAccept = { [weak tv] suggestion in
                 guard let tv else { return }
-                let cursorScreenRect = tv.firstRect(forCharacterRange: sel, actualRange: nil)
-
-                CompletionPanel.shared.onAccept = { suggestion in
-                    let end   = tv.selectedRange().location
-                    let range = NSRange(location: insertStart, length: max(0, end - insertStart))
-                    tv.insertText(suggestion.insert, replacementRange: range)
-                }
-                CompletionPanel.shared.onDismiss = nil
-
-                if CompletionPanel.shared.isVisible {
-                    CompletionPanel.shared.update(completions: suggestions)
-                } else {
-                    CompletionPanel.shared.show(completions: suggestions,
-                                                cursorScreenRect: cursorScreenRect)
-                }
+                let end   = tv.selectedRange().location
+                let range = NSRange(location: insertStart, length: max(0, end - insertStart))
+                tv.insertText(suggestion.insert, replacementRange: range)
             }
-            completionWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+            CompletionPanel.shared.onDismiss = nil
+
+            if CompletionPanel.shared.isVisible {
+                CompletionPanel.shared.update(completions: suggestions)
+            } else {
+                CompletionPanel.shared.show(completions: suggestions, cursorScreenRect: cursorScreenRect)
+            }
         }
 
         private func isIdentChar(_ c: unichar) -> Bool {
             (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95
         }
 
+        // MARK: LSP routing helpers
+
+        // True when an active Lua server should handle language features for this tab.
+        private var lspActive: Bool {
+            guard let client = parent.lspClient, parent.lspDocumentURL != nil else { return false }
+            return client.status == .active
+        }
+
+        // Selection location -> 0-based LSP (line, char) in realText space.
+        private func lspPosition(for bufferLocation: Int, in tv: NSTextView) -> (line: Int, character: Int) {
+            let ltv = tv as? LuaTextView
+            let text = ltv?.realText ?? tv.string
+            let ns = text as NSString
+            let realLoc = ltv?.realLocation(forBufferLocation: bufferLocation) ?? bufferLocation
+            let loc = min(realLoc, ns.length)
+            // Count newlines strictly before loc -> correct 0-based line.
+            var line = 0
+            var lineStart = 0
+            var i = 0
+            while i < loc {
+                if ns.character(at: i) == 10 { line += 1; lineStart = i + 1 }
+                i += 1
+            }
+            return (line, loc - lineStart)
+        }
+
         // MARK: Signature hint
 
         private func triggerSignatureHint(for tv: NSTextView) {
+            let sel = tv.selectedRange()
+            guard sel.location > 0 else { SignatureHintPanel.shared.dismiss(); return }
+
+            // LSP path: let the server compute the active signature + parameter.
+            if lspActive, let url = parent.lspDocumentURL {
+                let pos = lspPosition(for: sel.location, in: tv)
+                parent.lspClient?.requestSignatureHelp(url, line: pos.line, character: pos.character) { [weak self, weak tv] sig in
+                    guard let self, let tv else { return }
+                    guard let sig else { self.triggerSignatureHintStatic(for: tv); return }
+                    let cursorRect = tv.firstRect(forCharacterRange: tv.selectedRange(), actualRange: nil)
+                    SignatureHintPanel.shared.show(signature: sig.label,
+                                                   activeParam: sig.activeParameter,
+                                                   cursorScreenRect: cursorRect)
+                }
+                return
+            }
+
+            triggerSignatureHintStatic(for: tv)
+        }
+
+        private func triggerSignatureHintStatic(for tv: NSTextView) {
             let sel = tv.selectedRange()
             guard sel.location > 0 else { SignatureHintPanel.shared.dismiss(); return }
             let str = tv.string as NSString
@@ -537,7 +676,7 @@ struct LuaEditorView: NSViewRepresentable {
             }
 
             // Extract the function name before '('
-            var nameEnd = openParenPos
+            let nameEnd = openParenPos
             var nameStart = nameEnd - 1
             // Walk back over ident chars and dots (for love.graphics.draw etc.)
             while nameStart > 0 {
@@ -730,6 +869,21 @@ final class LuaTextView: NSTextView {
     var boundFileURL: URL?
     var pausedLine: Int? { didSet { setNeedsDisplay(bounds) } }
 
+    // LSP diagnostics for this buffer (realText-space positions). Setting them
+    // repaints squiggles (temporary attributes) and refreshes the gutter.
+    var diagnostics: [LSPClientService.Diagnostic] = [] {
+        didSet { applyDiagnosticSquiggles(); lineNumberRuler?.needsDisplay = true }
+    }
+    private var squiggleRanges: [NSRange] = []
+
+    weak var lspClient: LSPClientService?
+    var lspDocumentURL: URL?
+    var docHoverEnabled = true
+    private var hoverTrackingArea: NSTrackingArea?
+    private var hoverWorkItem: DispatchWorkItem?
+    private var lastHoverCharIndex: Int = NSNotFound   // char a popover is currently shown for
+    private var hoverPendingCharIndex: Int = NSNotFound // char the timer is scheduled for
+
     func editorFont(size: CGFloat? = nil) -> NSFont {
         let s = size ?? editorFontSize
         if !editorFontName.isEmpty, let f = NSFont(name: editorFontName, size: s) { return f }
@@ -741,6 +895,7 @@ final class LuaTextView: NSTextView {
     private var highlightTask: DispatchWorkItem?
 
     var isJsonFile: Bool { boundFileURL?.pathExtension.lowercased() == "json" }
+    var isLuaBuffer: Bool { boundFileURL?.pathExtension.lowercased() == "lua" }
     private var suppressDidChangeHandling = false
     private let deferredHighlightCharacterThreshold = 40_000
     private let plainTextModeCharacterThreshold = 120_000
@@ -1266,6 +1421,326 @@ final class LuaTextView: NSTextView {
         insertText("", replacementRange: selectedRange())
     }
 
+    /// Maps a buffer (possibly-folded) location to its location in realText.
+    /// When no folds are active this is the identity. Used for LSP positions.
+    func realLocation(forBufferLocation bufLoc: Int) -> Int {
+        guard isFoldingActive else { return bufLoc }
+        let sorted = foldRegions.sorted { $0.placeholderRange.location < $1.placeholderRange.location }
+        var real = bufLoc
+        for fold in sorted {
+            let placeholderEnd = NSMaxRange(fold.placeholderRange)
+            if placeholderEnd <= bufLoc {
+                // Fold is entirely before the location: add back the hidden length.
+                real += (fold.originalText as NSString).length - fold.placeholderRange.length
+            } else {
+                break  // folds are sorted; nothing further can precede bufLoc
+            }
+        }
+        return real
+    }
+
+    /// Maps a realText location back to a buffer (possibly-folded) location.
+    /// Inverse of realLocation(forBufferLocation:). Identity when unfolded.
+    /// Returns nil if the realText location falls inside a folded region.
+    func bufferLocation(forRealLocation realLoc: Int) -> Int? {
+        guard isFoldingActive else { return realLoc }
+        let sorted = foldRegions.sorted { $0.placeholderRange.location < $1.placeholderRange.location }
+        var buf = realLoc
+        var realCursor = 0
+        var bufCursor = 0
+        for fold in sorted {
+            let beforeLen = fold.placeholderRange.location - bufCursor
+            let realChunkEnd = realCursor + beforeLen
+            if realLoc < realChunkEnd {
+                return bufCursor + (realLoc - realCursor)  // before this fold
+            }
+            let hiddenLen = (fold.originalText as NSString).length
+            if realLoc < realChunkEnd + hiddenLen {
+                return nil  // inside a collapsed fold — not visible
+            }
+            realCursor = realChunkEnd + hiddenLen
+            bufCursor = NSMaxRange(fold.placeholderRange)
+            buf = bufCursor + (realLoc - realCursor)
+        }
+        return buf
+    }
+
+    // Maps a 0-based realText (line, character) to a buffer character location.
+    private func bufferLocation(realLine: Int, realCharacter: Int) -> Int? {
+        let realText = self.realText as NSString
+        var line = 0
+        var lineStart = 0
+        if realLine > 0 {
+            var found = false
+            realText.enumerateSubstrings(in: NSRange(location: 0, length: realText.length),
+                                         options: [.byLines, .substringNotRequired]) { _, _, enclosing, stop in
+                line += 1
+                if line == realLine {
+                    lineStart = enclosing.location + enclosing.length
+                    found = true
+                    stop.pointee = true
+                }
+            }
+            if !found { return nil }
+        }
+        let realLoc = min(lineStart + realCharacter, realText.length)
+        return bufferLocation(forRealLocation: realLoc)
+    }
+
+    // Underline diagnostic ranges with squiggles via temporary attributes
+    // (same mechanism as bracket matching). Cleared and reapplied on change.
+    private func applyDiagnosticSquiggles() {
+        guard let lm = layoutManager else { return }
+        for r in squiggleRanges {
+            lm.removeTemporaryAttribute(.underlineStyle, forCharacterRange: r)
+            lm.removeTemporaryAttribute(.underlineColor, forCharacterRange: r)
+        }
+        squiggleRanges = []
+
+        let bufLen = (string as NSString).length
+        for diag in diagnostics {
+            guard let startLoc = bufferLocation(realLine: diag.startLine, realCharacter: diag.startCharacter) else { continue }
+            let endLoc = bufferLocation(realLine: diag.endLine, realCharacter: diag.endCharacter) ?? (startLoc + 1)
+            let length = max(1, min(endLoc, bufLen) - startLoc)
+            guard startLoc >= 0, startLoc < bufLen else { continue }
+            let range = NSRange(location: startLoc, length: min(length, bufLen - startLoc))
+            let color: NSColor = diag.severity == .warning ? .systemYellow : .systemRed
+            lm.addTemporaryAttribute(.underlineStyle,
+                                     value: NSUnderlineStyle.thick.rawValue | NSUnderlineStyle.patternDot.rawValue,
+                                     forCharacterRange: range)
+            lm.addTemporaryAttribute(.underlineColor, value: color, forCharacterRange: range)
+            squiggleRanges.append(range)
+            // Diagnostic message is shown via the unified hover panel (fireHover),
+            // not an NSToolTip — so there's a single combined box.
+        }
+    }
+
+    // Diagnostics whose range covers the given buffer character location.
+    private func diagnosticsCovering(bufferLocation loc: Int) -> [LSPClientService.Diagnostic] {
+        diagnostics.filter { diag in
+            guard let s = bufferLocation(realLine: diag.startLine, realCharacter: diag.startCharacter) else { return false }
+            let e = bufferLocation(realLine: diag.endLine, realCharacter: diag.endCharacter) ?? (s + 1)
+            return loc >= s && loc < max(e, s + 1)
+        }
+    }
+
+    // MARK: Hover
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area = hoverTrackingArea { removeTrackingArea(area) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        // Hover works with or without the language server (static fallback below),
+        // gated on the doc-hover setting, for Lua buffers only.
+        guard docHoverEnabled, isLuaBuffer,
+              let lm = layoutManager, let tc = textContainer, lm.numberOfGlyphs > 0 else { return }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let containerPoint = NSPoint(x: point.x - textContainerInset.width,
+                                     y: point.y - textContainerInset.height)
+        let charIndex = lm.characterIndexForGlyph(at: lm.glyphIndex(for: containerPoint, in: tc))
+
+        // Staying within the same token must NOT reset the timer — otherwise slow
+        // motion over a symbol keeps rescheduling and hover never fires. Only act
+        // when the hovered character actually changes.
+        if charIndex == hoverPendingCharIndex { return }
+        hoverPendingCharIndex = charIndex
+
+        hoverWorkItem?.cancel()
+        // Already showing this symbol's popover: nothing to do.
+        if charIndex == lastHoverCharIndex, HoverPanel.shared.isVisible { return }
+
+        let work = DispatchWorkItem { [weak self] in self?.fireHover(at: point) }
+        hoverWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        hoverWorkItem?.cancel()
+        lastHoverCharIndex = NSNotFound
+        hoverPendingCharIndex = NSNotFound
+        HoverPanel.shared.dismiss()
+    }
+
+    private func fireHover(at point: NSPoint) {
+        guard let lm = layoutManager, let tc = textContainer else { return }
+
+        let containerPoint = NSPoint(x: point.x - textContainerInset.width,
+                                     y: point.y - textContainerInset.height)
+        let glyphIndex = lm.glyphIndex(for: containerPoint, in: tc)
+        guard lm.numberOfGlyphs > 0 else { return }
+        let charIndex = lm.characterIndexForGlyph(at: glyphIndex)
+
+        // Don't re-request for the same symbol position.
+        if charIndex == lastHoverCharIndex, HoverPanel.shared.isVisible { return }
+        lastHoverCharIndex = charIndex
+
+        let glyphRange = lm.glyphRange(forCharacterRange: NSRange(location: charIndex, length: 1),
+                                       actualCharacterRange: nil)
+        var rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+        rect.origin.x += textContainerInset.width
+        rect.origin.y += textContainerInset.height
+        let screenRect = window?.convertToScreen(convert(rect, to: nil)) ?? .zero
+
+        let diagBlock = diagnosticsCovering(bufferLocation: charIndex)
+            .map { ($0.severity == .warning ? "Warning: " : "Error: ") + $0.message }
+            .joined(separator: "\n")
+
+        // Prefer the language server when running; otherwise static love_api docs.
+        if let url = lspDocumentURL, let client = lspClient, client.status == .active {
+            client.requestHover(url, line: hoverPosition(forBufferLocation: charIndex).line,
+                                character: hoverPosition(forBufferLocation: charIndex).character) { [weak self] markdown in
+                let docs = (markdown?.isEmpty == false) ? markdown : self?.staticDocMarkdown(charIndex: charIndex)
+                self?.presentCombinedHover(diagnostics: diagBlock, docs: docs, screenRect: screenRect)
+            }
+        } else {
+            presentCombinedHover(diagnostics: diagBlock, docs: staticDocMarkdown(charIndex: charIndex), screenRect: screenRect)
+        }
+    }
+
+    // Compose the single hover box: diagnostics on top, an HR, then docs below.
+    // HR only when both are present; dismiss if neither.
+    private func presentCombinedHover(diagnostics diagBlock: String, docs: String?, screenRect: NSRect) {
+        let hasDiag = !diagBlock.isEmpty
+        let hasDocs = (docs?.isEmpty == false)
+        guard hasDiag || hasDocs else { HoverPanel.shared.dismiss(); return }
+
+        var md = ""
+        if hasDiag { md += diagBlock }
+        if hasDiag && hasDocs { md += "\n\n---\n\n" }
+        if hasDocs { md += docs! }
+        HoverPanel.shared.show(markdown: md, anchorScreenRect: screenRect)
+    }
+
+    // Static docs markdown for the dotted symbol under the cursor, or nil.
+    private func staticDocMarkdown(charIndex: Int) -> String? {
+        let ns = string as NSString
+        guard charIndex < ns.length else { return nil }
+        func isSym(_ c: unichar) -> Bool {
+            (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 || c == 46
+        }
+        var start = charIndex, end = charIndex
+        while start > 0, isSym(ns.character(at: start - 1)) { start -= 1 }
+        while end < ns.length, isSym(ns.character(at: end)) { end += 1 }
+        guard end > start else { return nil }
+        let symbol = ns.substring(with: NSRange(location: start, length: end - start))
+        return LoveAPILoader.hoverMarkdown(for: symbol)
+    }
+
+    // Buffer char location -> 0-based (line, char) in realText (LSP positions).
+    // Counts newlines strictly before `loc`; the line containing the cursor is
+    // not yet "passed", so this yields the correct 0-based line.
+    private func hoverPosition(forBufferLocation bufLoc: Int) -> (line: Int, character: Int) {
+        let real = realLocation(forBufferLocation: bufLoc)
+        let ns = realText as NSString
+        let loc = min(real, ns.length)
+        var line = 0
+        var lineStart = 0
+        var i = 0
+        while i < loc {
+            if ns.character(at: i) == 10 {  // \n
+                line += 1
+                lineStart = i + 1
+            }
+            i += 1
+        }
+        return (line, loc - lineStart)
+    }
+
+    // MARK: Quick Fix
+
+    private var quickFixActions: [LSPClientService.CodeAction] = []
+
+    override func rightMouseDown(with event: NSEvent) {
+        // A right-click opens a menu; the hover box must not linger over it.
+        hoverWorkItem?.cancel()
+        lastHoverCharIndex = NSNotFound
+        hoverPendingCharIndex = NSNotFound
+        HoverPanel.shared.dismiss()
+
+        guard let lm = layoutManager, let tc = textContainer,
+              let url = lspDocumentURL, let client = lspClient,
+              client.status == .active, lm.numberOfGlyphs > 0 else {
+            super.rightMouseDown(with: event); return
+        }
+        // Resolve the clicked character and the diagnostics covering its line.
+        let p = convert(event.locationInWindow, from: nil)
+        let containerPoint = NSPoint(x: p.x - textContainerInset.width, y: p.y - textContainerInset.height)
+        let charIndex = lm.characterIndexForGlyph(at: lm.glyphIndex(for: containerPoint, in: tc))
+        let pos = hoverPosition(forBufferLocation: charIndex)
+
+        let lineDiags = diagnostics.filter { $0.startLine <= pos.line && pos.line <= $0.endLine }
+        guard !lineDiags.isEmpty else { super.rightMouseDown(with: event); return }
+
+        // Move the caret to the click so an applied edit lands sensibly, then ask
+        // the server for fixes covering this line's diagnostics.
+        setSelectedRange(NSRange(location: charIndex, length: 0))
+        let startL = lineDiags.map(\.startLine).min() ?? pos.line
+        let endL = lineDiags.map(\.endLine).max() ?? pos.line
+        // Capture the click point now; the event is stale once the async reply
+        // arrives, so we pop the menu by position rather than with the event.
+        let menuPoint = p
+        client.requestCodeActions(url, startLine: startL, startCharacter: 0,
+                                  endLine: endL, endCharacter: 0, diagnostics: lineDiags) { [weak self] actions in
+            guard let self, !actions.isEmpty else { return }
+            self.presentQuickFixMenu(actions, at: menuPoint)
+        }
+    }
+
+    private func presentQuickFixMenu(_ actions: [LSPClientService.CodeAction], at point: NSPoint) {
+        quickFixActions = actions
+        let menu = NSMenu(title: "Quick Fix")
+        for (i, action) in actions.enumerated() {
+            let item = NSMenuItem(title: action.title, action: #selector(applyQuickFix(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = i
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+
+    @objc private func applyQuickFix(_ sender: NSMenuItem) {
+        guard sender.tag < quickFixActions.count, let client = lspClient else { return }
+        let action = quickFixActions[sender.tag]
+        client.apply(action) { [weak self] _, edits in
+            self?.applyLSPEdits(edits)
+        }
+    }
+
+    // Apply LSP TextEdits (realText positions) to this buffer, mapping through
+    // folding. Applied last-first so earlier offsets stay valid.
+    private func applyLSPEdits(_ edits: [[String: Any]]) {
+        struct Resolved { let range: NSRange; let text: String }
+        var resolved: [Resolved] = []
+        for e in edits {
+            guard let newText = e["newText"] as? String,
+                  let range = e["range"] as? [String: Any],
+                  let start = range["start"] as? [String: Any],
+                  let end = range["end"] as? [String: Any],
+                  let sl = start["line"] as? Int, let sc = start["character"] as? Int,
+                  let el = end["line"] as? Int, let ec = end["character"] as? Int,
+                  let startLoc = bufferLocation(realLine: sl, realCharacter: sc),
+                  let endLoc = bufferLocation(realLine: el, realCharacter: ec) else { continue }
+            resolved.append(Resolved(range: NSRange(location: startLoc, length: max(0, endLoc - startLoc)),
+                                     text: newText))
+        }
+        // Apply bottom-up so earlier edits don't shift later ranges.
+        for r in resolved.sorted(by: { $0.range.location > $1.range.location }) {
+            if shouldChangeText(in: r.range, replacementString: r.text) {
+                insertText(r.text, replacementRange: r.range)
+            }
+        }
+    }
+
     /// Returns the real (unfolded) text corresponding to the current selection.
     private func selectedRealText() -> String {
         let sel = selectedRange()
@@ -1375,6 +1850,8 @@ final class LuaTextView: NSTextView {
 final class LineNumberRulerView: NSRulerView {
     var theme: LuaTheme = .dark { didSet { needsDisplay = true } }
     var breakpoints: BreakpointManager? { didSet { needsDisplay = true } }
+    // 1-based line number -> highest severity on that line (for the gutter dot).
+    var diagnosticLines: [Int: LSPClientService.DiagnosticSeverity] = [:] { didSet { needsDisplay = true } }
     var currentFile: String = "" { didSet { needsDisplay = true } }
     var coverageHit: Set<Int> = []  { didSet { needsDisplay = true } }  // gutter coverage stripes
     var coverageMiss: Set<Int> = [] { didSet { needsDisplay = true } }
@@ -1580,13 +2057,25 @@ final class LineNumberRulerView: NSRulerView {
             path.fill()
         }
 
-        // Breakpoint dot
+        // Breakpoint dot (takes priority over the diagnostic marker on a line)
         if let bp = breakpoints, bp.has(file: currentFile, line: lineNumber) {
             NSColor.systemRed.setFill()
             let dotSize: CGFloat = 7
             let dotX = bounds.minX + 4
             let dotY = midY - dotSize / 2
             NSBezierPath(ovalIn: CGRect(x: dotX, y: dotY, width: dotSize, height: dotSize)).fill()
+        } else if let severity = diagnosticLines[lineNumber] {
+            // Diagnostic marker: a small diamond, red for errors, yellow for warnings.
+            (severity == .warning ? NSColor.systemYellow : NSColor.systemRed).setFill()
+            let s: CGFloat = 6
+            let cx = bounds.minX + 4 + 3.5
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: cx, y: midY - s / 2))
+            path.line(to: NSPoint(x: cx + s / 2, y: midY))
+            path.line(to: NSPoint(x: cx, y: midY + s / 2))
+            path.line(to: NSPoint(x: cx - s / 2, y: midY))
+            path.close()
+            path.fill()
         }
 
         let nsLabel = label as NSString
