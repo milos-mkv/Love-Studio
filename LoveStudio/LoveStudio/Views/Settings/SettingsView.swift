@@ -228,6 +228,17 @@ private struct RunnerSettingsView: View {
     @AppStorage("runnerDebugPort")         private var debugPort: Int = 8172
     @AppStorage("runnerShowExitCode")      private var showExitCode: Bool = true
 
+    // Test runner settings (§3.7)
+    @AppStorage("testRunnerEnabled")  private var testRunnerEnabled: Bool = true
+    @AppStorage("testRunnerTimeout")  private var testRunnerTimeout: Double = 30
+    @AppStorage("testRunnerCoverage") private var testRunnerCoverage: Bool = false
+    @AppStorage("testRunnerGutters")  private var testRunnerGutters: Bool = false
+    @AppStorage("testRunnerConsole")  private var testRunnerConsole: Bool = true
+    @AppStorage("testRunnerFolders")  private var testRunnerFoldersJSON: String = ""
+
+    // Editable row list, synced to the JSON string above.
+    @State private var testRows: [TestFolderGlob] = []
+
     var body: some View {
         Form {
             Section {
@@ -277,9 +288,76 @@ private struct RunnerSettingsView: View {
             } header: {
                 Label("Debugger", systemImage: "ant")
             }
+
+            Section {
+                Toggle("Enable Test Runner", isOn: $testRunnerEnabled)
+
+                if testRunnerEnabled {
+                    LabeledContent("Run timeout") {
+                        HStack {
+                            Slider(value: $testRunnerTimeout, in: 5...300, step: 5)
+                                .frame(width: 120)
+                            Text("\(Int(testRunnerTimeout)) s")
+                                .monospacedDigit()
+                                .frame(width: 44, alignment: .trailing)
+                        }
+                    }
+
+                    Toggle("Enable code coverage", isOn: $testRunnerCoverage)
+                    if testRunnerCoverage {
+                        Toggle("Show coverage in editor gutter", isOn: $testRunnerGutters)
+                            .padding(.leading, 16)
+                    }
+                    Toggle("Echo test results to console", isOn: $testRunnerConsole)
+
+                    // Editable folder | glob rows. One glob per row (§3.7).
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Test folders")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        ForEach($testRows) { $row in
+                            HStack(spacing: 6) {
+                                TextField("folder", text: $row.folder)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 130)
+                                Text("|").foregroundStyle(.tertiary)
+                                TextField("glob (e.g. **/*.test.lua)", text: $row.glob)
+                                    .textFieldStyle(.roundedBorder)
+                                Button {
+                                    testRows.removeAll { $0.id == row.id }
+                                    persistRows()
+                                } label: { Image(systemName: "minus.circle") }
+                                .buttonStyle(.plain).foregroundStyle(.secondary)
+                                .help("Remove row")
+                            }
+                        }
+                        Button {
+                            testRows.append(TestFolderGlob(folder: "tests", glob: "**/*.lua"))
+                            persistRows()
+                        } label: {
+                            Label("Add folder", systemImage: "plus.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    }
+                    .onChange(of: testRows) { _, _ in persistRows() }
+                }
+            } header: {
+                Label("Tests", systemImage: "flask")
+            }
         }
         .formStyle(.grouped)
         .padding(.bottom, 8)
+        .onAppear(perform: loadRows)
+    }
+
+    private func loadRows() {
+        let decoded = [TestFolderGlob].decode(from: testRunnerFoldersJSON)
+        testRows = decoded.isEmpty ? .defaultRows : decoded
+    }
+
+    private func persistRows() {
+        testRunnerFoldersJSON = testRows.encoded()
     }
 }
 

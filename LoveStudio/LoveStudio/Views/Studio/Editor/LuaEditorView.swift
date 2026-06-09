@@ -29,6 +29,8 @@ struct LuaEditorView: NSViewRepresentable {
     var breakpoints  : BreakpointManager? = nil
     var pausedLine   : Int? = nil
     var currentFile  : String = ""
+    var coverageHit  : Set<Int> = []     // covered lines (gutter green) — empty when off
+    var coverageMiss : Set<Int> = []     // uncovered lines (gutter red)
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
@@ -171,6 +173,8 @@ struct LuaEditorView: NSViewRepresentable {
         textView.pausedLine = pausedLine
         textView.lineNumberRuler?.breakpoints = breakpoints
         textView.lineNumberRuler?.currentFile = currentFile
+        textView.lineNumberRuler?.coverageHit = coverageHit
+        textView.lineNumberRuler?.coverageMiss = coverageMiss
 
         if let line = jumpToLine.wrappedValue {
             jumpToLine.wrappedValue = nil
@@ -1372,6 +1376,8 @@ final class LineNumberRulerView: NSRulerView {
     var theme: LuaTheme = .dark { didSet { needsDisplay = true } }
     var breakpoints: BreakpointManager? { didSet { needsDisplay = true } }
     var currentFile: String = "" { didSet { needsDisplay = true } }
+    var coverageHit: Set<Int> = []  { didSet { needsDisplay = true } }  // gutter coverage stripes
+    var coverageMiss: Set<Int> = [] { didSet { needsDisplay = true } }
     var fontName: String = "" { didSet { needsDisplay = true } }
     var fontSize: CGFloat = 11 {
         didSet {
@@ -1543,6 +1549,16 @@ final class LineNumberRulerView: NSRulerView {
                             lineNumber: Int, luaTextView: LuaTextView? = nil) {
         let y = lineRect.minY + insetY - visibleRect.minY
         let midY = y + lineRect.height / 2
+
+        // Coverage stripe — thin bar on the far-left gutter edge (green=covered,
+        // red=uncovered). Only drawn when coverage data is present for this line.
+        if coverageHit.contains(lineNumber) {
+            NSColor.systemGreen.withAlphaComponent(0.55).setFill()
+            NSRect(x: bounds.minX, y: y, width: 3, height: lineRect.height).fill()
+        } else if coverageMiss.contains(lineNumber) {
+            NSColor.systemRed.withAlphaComponent(0.55).setFill()
+            NSRect(x: bounds.minX, y: y, width: 3, height: lineRect.height).fill()
+        }
 
         // Fold triangle - fixed on the left so it never overlaps line numbers
         if let tv = luaTextView, tv.isFoldable(lineNum: lineNumber, in: tv.string) {

@@ -12,6 +12,7 @@ struct StudioView: View {
     @State private var untitledURLs: Set<URL> = []
     @State private var untitledCount = 0
     @State private var runner       = LoveRunner()
+    @State private var testRunner   = TestRunner()
     @State private var gitService   = GitStatusService()
     @State private var debugServer  = DebugServer()
     @State private var breakpoints  = BreakpointManager()
@@ -21,6 +22,8 @@ struct StudioView: View {
     @State private var pausedLine    : Int? = nil
     @State private var pausedFileURL : URL?   = nil
     @State private var fileWatcher  : FileWatcher? = nil
+    @State private var pendingTestDiscovery = false   // queued re-discovery (§4.3a)
+    @State private var sidebarSelection: SidebarTab = .files
 
     @AppStorage("runnerHotReload")      private var runnerHotReload: Bool   = true
     @AppStorage("runnerHotReloadDelay") private var runnerHotReloadDelay: Double = 0.5
@@ -28,19 +31,39 @@ struct StudioView: View {
     @AppStorage("runnerMaxLines")       private var runnerMaxLines: Int     = 2000
     @AppStorage("runnerDebugPort")      private var runnerDebugPort: Int    = 8172
 
+    // Test runner settings (§3.7)
+    @AppStorage("testRunnerEnabled")  private var testRunnerEnabled: Bool   = true
+    @AppStorage("testRunnerTimeout")  private var testRunnerTimeout: Double = 30
+    @AppStorage("testRunnerCoverage") private var testRunnerCoverage: Bool  = false
+    @AppStorage("testRunnerFolders")  private var testRunnerFoldersJSON: String = ""
+    @AppStorage("testRunnerConsole")  private var testRunnerConsole: Bool  = true
+    @AppStorage("testRunnerGutters")  private var testRunnerGutters: Bool  = false
+
     init(projectURL: URL) {
         self.projectURL = projectURL
         self._project = State(initialValue: Project(rootURL: projectURL))
     }
 
+    private var sidebar: some View {
+        SidebarView(project: project, gitService: gitService,
+                    selectedTab: $sidebarSelection,
+                    testRunner: testRunner,
+                    testRunnerEnabled: testRunnerEnabled,
+                    testRows: testRows,
+                    canRunTests: !runner.isRunning && !isDebugging,
+                    onOpen: openFile, onFileURLChanged: fileURLChanged,
+                    onJump: { url, line in
+                        openFile(ProjectItem(url: url, isFolder: false))
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { jumpToLine = line }
+                    },
+                    onOpenDoc: { path in
+                        openFile(ProjectItem(url: URL(fileURLWithPath: path), isFolder: false))
+                    })
+    }
+
     var body: some View {
         NavigationSplitView {
-            SidebarView(project: project, gitService: gitService,
-                        onOpen: openFile, onFileURLChanged: fileURLChanged,
-                        onJump: { url, line in
-                            openFile(ProjectItem(url: url, isFolder: false))
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { jumpToLine = line }
-                        })
+            sidebar
         } detail: {
             EditorAreaView(openTabs: $openTabs, activeTab: $activeTab,
                            untitledURLs: $untitledURLs,
@@ -67,7 +90,9 @@ struct StudioView: View {
                                    openFile(ProjectItem(url: fileURL, isFolder: false))
                                }
                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { jumpToLine = line }
-                           })
+                           },
+                           coverage: testRunner.coverage,
+                           coverageGutters: testRunnerEnabled && testRunnerCoverage && testRunnerGutters)
                 .overlay(alignment: .top) {
                     Rectangle()
                         .fill(Color(NSColor.separatorColor))
@@ -76,7 +101,11 @@ struct StudioView: View {
         }
         .toolbar { StudioToolbar(projectURL: projectURL, runner: runner,
                                  debugServer: debugServer, isDebugging: isDebugging,
-                                 onDebug: startDebug, onStopDebug: stopDebug) }
+                                 onDebug: startDebug, onStopDebug: stopDebug,
+                                 testRunner: testRunner,
+                                 testRunnerEnabled: testRunnerEnabled,
+                                 testRows: testRows,
+                                 onRunTests: runTests) }
         .environment(runner)
         .navigationTitle("")
         .background(
@@ -92,7 +121,17 @@ struct StudioView: View {
             gitService.attach(to: projectURL)
             setupDebugWiring()
             let watcher = FileWatcher(url: projectURL)
-            watcher.onChange = { project.refresh() }
+            watcher.onChange = {
+                project.refresh()
+                // Re-discover tests on file changes (§4.6) — but suppress while a
+                // run is in flight (§4.3a); queue it to run on completion.
+                guard testRunnerEnabled else { return }
+                if testRunner.isRunning {
+                    pendingTestDiscovery = true
+                } else {
+                    testRunner.discover(projectRoot: projectURL, rows: testRows)
+                }
+            }
             watcher.start()
             fileWatcher = watcher
             runner.onErrorJump = { [self] fileName, lineNumber in
@@ -103,6 +142,25 @@ struct StudioView: View {
                 }
             }
             applyRunnerSettings()
+            applyTestRunnerSettings()
+            // Console output from tests → the bottom-panel console.
+            testRunner.onConsole = { line in runner.log(line, kind: .stdout) }
+            testRunner.debugServer = debugServer
+            testRunner.breakpointManager = breakpoints
+            // Initial discovery so the Explorer shows a tree before any run.
+            if testRunnerEnabled { testRunner.discover(projectRoot: projectURL, rows: testRows) }
+        }
+        .onChange(of: testRunnerTimeout)  { _, _ in applyTestRunnerSettings() }
+        .onChange(of: testRunnerCoverage) { _, _ in applyTestRunnerSettings() }
+        .onChange(of: testRunnerConsole)  { _, _ in applyTestRunnerSettings() }
+        .onChange(of: testRunner.isRunning) { _, running in
+            // Auto-select the Tests tab on run start; flush queued discovery on finish.
+            if running {
+                sidebarSelection = .tests
+            } else if pendingTestDiscovery {
+                pendingTestDiscovery = false
+                testRunner.discover(projectRoot: projectURL, rows: testRows)
+            }
         }
         .onChange(of: runnerHotReload)      { _, _ in applyRunnerSettings() }
         .onChange(of: runnerHotReloadDelay) { _, _ in applyRunnerSettings() }
@@ -221,6 +279,25 @@ struct StudioView: View {
         runner.debugPort        = runnerDebugPort
     }
 
+    private func applyTestRunnerSettings() {
+        testRunner.timeoutSeconds       = testRunnerTimeout
+        testRunner.coverageEnabled      = testRunnerCoverage
+        testRunner.echoResultsToConsole = testRunnerConsole
+    }
+
+    /// Run all tests. Mutual exclusion (C9): never while the game runs/debugs.
+    private func runTests() {
+        guard !runner.isRunning, !isDebugging, !testRunner.isRunning else { return }
+        applyTestRunnerSettings()
+        testRunner.run(projectRoot: projectURL, rows: testRows, filter: nil)
+    }
+
+    /// Configured `folder | glob` rows (§3.7), decoded from @AppStorage, or defaults.
+    private var testRows: [TestFolderGlob] {
+        let rows = [TestFolderGlob].decode(from: testRunnerFoldersJSON)
+        return rows.isEmpty ? .defaultRows : rows
+    }
+
     private func fileURLChanged(oldURL: URL, newURL: URL) {
         guard let idx = openTabs.firstIndex(where: { $0.url == oldURL }) else { return }
         let wasActive = activeTab?.url == oldURL
@@ -237,11 +314,16 @@ private struct SidebarView: View {
 
     let project: Project
     var gitService: GitStatusService? = nil
+    @Binding var selectedTab : SidebarTab
+    var testRunner: TestRunner? = nil
+    var testRunnerEnabled: Bool = true
+    var testRows: [TestFolderGlob] = []
+    var canRunTests: Bool = true
     var onOpen: ((ProjectItem) -> Void)? = nil
     var onFileURLChanged: ((URL, URL) -> Void)? = nil
     var onJump: ((URL, Int) -> Void)? = nil
+    var onOpenDoc: ((String) -> Void)? = nil
 
-    @State private var selectedTab      : SidebarTab = .files
     @State private var findFocusTrigger : Int = 0
 
     var body: some View {
@@ -265,9 +347,13 @@ private struct SidebarView: View {
 
     // MARK: Tab Bar
 
+    private var visibleTabs: [SidebarTab] {
+        SidebarTab.allCases.filter { $0 != .tests || testRunnerEnabled }
+    }
+
     private var tabBar: some View {
         HStack(spacing: 0) {
-            ForEach(SidebarTab.allCases) { tab in
+            ForEach(visibleTabs) { tab in
                 let isSelected = selectedTab == tab
                 Button {
                     selectedTab = tab
@@ -310,6 +396,20 @@ private struct SidebarView: View {
             FindInFilesView(project: project, onJump: onJump, focusTrigger: findFocusTrigger)
         case .docs:
             DocsView()
+        case .tests:
+            if let testRunner {
+                TestExplorerView(
+                    runner: testRunner,
+                    projectRoot: project.rootURL,
+                    rows: testRows,
+                    canRun: canRunTests,
+                    onJump: { file, line in
+                        onJump?(URL(fileURLWithPath: file), line)
+                    },
+                    onOpenReport: { path in onOpenDoc?(path) },
+                    onOpenSettings: { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }
+                )
+            }
         }
     }
 
@@ -331,7 +431,7 @@ private struct SidebarView: View {
 // MARK: - SidebarTab
 
 private enum SidebarTab: String, CaseIterable, Identifiable {
-    case files, assets, find, docs
+    case files, assets, find, tests, docs
 
     var id: String { rawValue }
 
@@ -340,6 +440,7 @@ private enum SidebarTab: String, CaseIterable, Identifiable {
         case .files:  return "Files"
         case .assets: return "Assets"
         case .find:   return "Find"
+        case .tests:  return "Tests"
         case .docs:   return "Docs"
         }
     }
@@ -349,6 +450,7 @@ private enum SidebarTab: String, CaseIterable, Identifiable {
         case .files:  return "folder.fill"
         case .assets: return "photo.fill"
         case .find:   return "magnifyingglass"
+        case .tests:  return "flask.fill"
         case .docs:   return "book.closed.fill"
         }
     }
@@ -382,6 +484,8 @@ private struct EditorAreaView: View {
     var isDebugging  = false
     var gitService   : GitStatusService? = nil
     var onJump      : ((String, Int) -> Void)? = nil
+    var coverage     : CoverageStore? = nil      // per-line coverage for gutters
+    var coverageGutters = false                  // gated by setting
 
     @AppStorage("appAppearance")         private var appAppearance: String = "system"
     @AppStorage("editorFontSize")        private var editorFontSize: Double = 13
@@ -416,6 +520,17 @@ private struct EditorAreaView: View {
     @State private var isDragging = false
     @State private var panelCollapsed = false
     @State private var heightBeforeCollapse: CGFloat = 180
+
+    /// True for the Test Runner's own Markdown docs — the bundled help file and the
+    /// temp coverage report — which render read-only via `MarkdownDocView` (§3.8).
+    /// Deliberately NOT "any .md": only our two docs, so project .md files still edit.
+    private func isTestRunnerDoc(_ url: URL) -> Bool {
+        guard url.pathExtension.lowercased() == "md" else { return false }
+        if url.lastPathComponent == "test-runner-help.md" { return true }
+        if url.lastPathComponent == "coverage-report.md",
+           url.path.hasPrefix(FileManager.default.temporaryDirectory.path) { return true }
+        return false
+    }
 
     private var activeText: Binding<String> {
         Binding(
@@ -457,7 +572,14 @@ private struct EditorAreaView: View {
             // Editor or placeholder
             if let item = activeTab {
                 let isConf = item.url.lastPathComponent == "conf.lua" && !untitledURLs.contains(item.url)
-                if isConf && !confViewAsLua {
+                // Test Runner docs (help + coverage report) render read-only as
+                // Markdown, BEFORE the conf/Lua fallback so they aren't loaded as
+                // editable text (§3.8). Scoped to our docs (bundle help or a temp
+                // coverage report), not arbitrary project .md files.
+                if isTestRunnerDoc(item.url) {
+                    MarkdownDocView(url: item.url)
+                        .id(item.id)
+                } else if isConf && !confViewAsLua {
                     ConfEditorView(confURL: item.url, onSaved: { url in
                         onFileSaved?(url)
                         // Reload text buffer so switching to Lua view shows fresh content
@@ -499,7 +621,9 @@ private struct EditorAreaView: View {
                         jumpToLine: jumpToLine,
                         breakpoints: breakpoints,
                         pausedLine: pausedFileURL == item.url ? pausedLine : nil,
-                        currentFile: item.url.lastPathComponent
+                        currentFile: item.url.lastPathComponent,
+                        coverageHit: coverageGutters ? (coverage?.coverage(forPath: item.url.path)?.hit ?? []) : [],
+                        coverageMiss: coverageGutters ? (coverage?.coverage(forPath: item.url.path)?.miss ?? []) : []
                     )
                     .id(item.id)
                     .clipped()
@@ -1261,6 +1385,10 @@ private struct StudioToolbar: ToolbarContent {
     var isDebugging : Bool
     var onDebug     : () -> Void
     var onStopDebug : () -> Void
+    var testRunner       : TestRunner? = nil
+    var testRunnerEnabled: Bool = true
+    var testRows         : [TestFolderGlob] = []
+    var onRunTests       : () -> Void = {}
     @State private var showLoveMissingAlert = false
     @State private var showExport = false
 
@@ -1327,6 +1455,19 @@ private struct StudioToolbar: ToolbarContent {
             .help(isDebugging ? "Stop Debugging" : "Debug (⌘⌥R)")
             .disabled(runner.isRunning && !isDebugging)
             .keyboardShortcut("r", modifiers: [.command, .option])
+
+            // Run Tests — disabled while the game runs/debugs (C9, §4.3).
+            if testRunnerEnabled, let testRunner {
+                Button {
+                    onRunTests()
+                } label: {
+                    Image(systemName: "flask.fill")
+                        .foregroundColor(testRunner.isRunning ? .secondary
+                                         : ((runner.isRunning || isDebugging) ? .secondary : .green))
+                }
+                .help("Run Tests")
+                .disabled(runner.isRunning || isDebugging || testRunner.isRunning)
+            }
 
             Divider()
 
