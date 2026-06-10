@@ -67,6 +67,7 @@ final class DebugServer {
         listener = nil
         isListening = false
         resetPausedState(clearSessionData: true)
+        onResumed?()   // clear any paused-line highlight in the editor
     }
 
     func resume()   {

@@ -346,10 +346,12 @@ private struct RunnerSettingsView: View {
     @AppStorage("testRunnerCoverage") private var testRunnerCoverage: Bool = false
     @AppStorage("testRunnerGutters")  private var testRunnerGutters: Bool = false
     @AppStorage("testRunnerConsole")  private var testRunnerConsole: Bool = true
+    @AppStorage("testRunnerCoverageExcludes") private var coverageExcludesJSON: String = ""
     @AppStorage("testRunnerFolders")  private var testRunnerFoldersJSON: String = ""
 
-    // Editable row list, synced to the JSON string above.
+    // Editable row lists, synced to the JSON strings above.
     @State private var testRows: [TestFolderGlob] = []
+    @State private var excludeRows: [CoverageExcludeRow] = []
 
     var body: some View {
         Form {
@@ -419,32 +421,66 @@ private struct RunnerSettingsView: View {
                     if testRunnerCoverage {
                         Toggle("Show coverage in editor gutter", isOn: $testRunnerGutters)
                             .padding(.leading, 16)
+
+                        // Exclude-from-coverage globs (folders or files), one per row.
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Exclude from coverage")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            ForEach($excludeRows) { $row in
+                                HStack(spacing: 8) {
+                                    TextField("e.g. vendor/**  or  main.lua", text: $row.glob)
+                                        .textFieldStyle(.roundedBorder)
+                                        .font(.system(size: 12, design: .monospaced))
+                                    Button {
+                                        excludeRows.removeAll { $0.id == row.id }
+                                        persistExcludes()
+                                    } label: { Image(systemName: "minus.circle.fill") }
+                                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                                    .help("Remove this exclude")
+                                }
+                            }
+                            Button {
+                                excludeRows.append(CoverageExcludeRow(glob: ""))
+                                persistExcludes()
+                            } label: {
+                                Label("Add exclude", systemImage: "plus.circle").font(.caption)
+                            }
+                            .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                        }
+                        .padding(.leading, 16)
+                        .onChange(of: excludeRows) { _, _ in persistExcludes() }
                     }
                     Toggle("Echo test results to console", isOn: $testRunnerConsole)
 
-                    // Editable folder | glob rows. One glob per row (§3.7).
-                    VStack(alignment: .leading, spacing: 6) {
+                    // Editable folder + glob rows. One glob per row (§3.7). Each row
+                    // is two stacked labeled fields so the narrow Settings window
+                    // doesn't squeeze them.
+                    VStack(alignment: .leading, spacing: 10) {
                         Text("Test folders")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                         ForEach($testRows) { $row in
-                            HStack(spacing: 6) {
-                                TextField("folder", text: $row.folder)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 130)
-                                Text("|").foregroundStyle(.tertiary)
-                                TextField("glob (e.g. **/*.test.lua)", text: $row.glob)
-                                    .textFieldStyle(.roundedBorder)
+                            HStack(alignment: .center, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    LabeledField(caption: "Folder", placeholder: "tests",
+                                                 text: $row.folder)
+                                    LabeledField(caption: "Glob", placeholder: "**/*.test.lua",
+                                                 text: $row.glob)
+                                }
                                 Button {
                                     testRows.removeAll { $0.id == row.id }
                                     persistRows()
-                                } label: { Image(systemName: "minus.circle") }
+                                } label: { Image(systemName: "minus.circle.fill") }
                                 .buttonStyle(.plain).foregroundStyle(.secondary)
-                                .help("Remove row")
+                                .help("Remove this folder")
                             }
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.primary.opacity(0.04)))
                         }
                         Button {
-                            testRows.append(TestFolderGlob(folder: "tests", glob: "**/*.lua"))
+                            testRows.append(TestFolderGlob(folder: "tests", glob: "**/*.test.lua"))
                             persistRows()
                         } label: {
                             Label("Add folder", systemImage: "plus.circle")
@@ -460,7 +496,10 @@ private struct RunnerSettingsView: View {
         }
         .formStyle(.grouped)
         .padding(.bottom, 8)
-        .onAppear(perform: loadRows)
+        .onAppear {
+            loadRows()
+            loadExcludes()
+        }
     }
 
     private func loadRows() {
@@ -470,6 +509,43 @@ private struct RunnerSettingsView: View {
 
     private func persistRows() {
         testRunnerFoldersJSON = testRows.encoded()
+    }
+
+    private func loadExcludes() {
+        // First run (no stored value yet) seeds the defaults; an explicit empty list
+        // ("[]") is respected as "exclude nothing".
+        if coverageExcludesJSON.isEmpty {
+            excludeRows = .defaultRows
+            persistExcludes()
+        } else {
+            excludeRows = [CoverageExcludeRow].decode(from: coverageExcludesJSON)
+        }
+    }
+
+    private func persistExcludes() {
+        coverageExcludesJSON = excludeRows.encoded()
+    }
+}
+
+// MARK: - LabeledField
+
+/// A small fixed-width caption + a flexible text field, used by the test-folder
+/// row editor so labels don't compete with the fields for horizontal space.
+private struct LabeledField: View {
+    let caption: String
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(caption)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(width: 46, alignment: .leading)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+        }
     }
 }
 

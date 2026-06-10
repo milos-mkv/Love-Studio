@@ -40,6 +40,7 @@ struct StudioView: View {
     @AppStorage("testRunnerFolders")  private var testRunnerFoldersJSON: String = ""
     @AppStorage("testRunnerConsole")  private var testRunnerConsole: Bool  = true
     @AppStorage("testRunnerGutters")  private var testRunnerGutters: Bool  = false
+    @AppStorage("testRunnerCoverageExcludes") private var testRunnerCoverageExcludes: String = ""
 
     init(projectURL: URL) {
         self.projectURL = projectURL
@@ -122,6 +123,8 @@ struct StudioView: View {
         }
         .onAppear {
             gitService.attach(to: projectURL)
+            // Refresh the LSP definition files on open so they stay current.
+            if annotationsEnabled { try? TemplateService.shared.writeLSPFiles(at: projectURL) }
             lspClient.mode = annotationsEnabled ? .luaCATS : .none
             lspClient.attach(to: projectURL)
             setupDebugWiring()
@@ -155,18 +158,20 @@ struct StudioView: View {
             // Initial discovery so the Explorer shows a tree before any run.
             if testRunnerEnabled { testRunner.discover(projectRoot: projectURL, rows: testRows) }
         }
-        .onChange(of: testRunnerTimeout)  { _, _ in applyTestRunnerSettings() }
-        .onChange(of: testRunnerCoverage) { _, _ in applyTestRunnerSettings() }
-        .onChange(of: testRunnerConsole)  { _, _ in applyTestRunnerSettings() }
-        .onChange(of: testRunner.isRunning) { _, running in
-            // Auto-select the Tests tab on run start; flush queued discovery on finish.
-            if running {
-                sidebarSelection = .tests
-            } else if pendingTestDiscovery {
-                pendingTestDiscovery = false
-                testRunner.discover(projectRoot: projectURL, rows: testRows)
-            }
-        }
+        .modifier(TestRunnerObservers(
+            timeout: testRunnerTimeout, coverage: testRunnerCoverage,
+            console: testRunnerConsole, foldersJSON: testRunnerFoldersJSON,
+            covExcludes: testRunnerCoverageExcludes,
+            enabled: testRunnerEnabled, isRunning: testRunner.isRunning,
+            applySettings: applyTestRunnerSettings,
+            rediscover: { if testRunnerEnabled { testRunner.discover(projectRoot: projectURL, rows: testRows) } },
+            onRunStart: { sidebarSelection = .tests },
+            onRunFinish: {
+                if pendingTestDiscovery {
+                    pendingTestDiscovery = false
+                    testRunner.discover(projectRoot: projectURL, rows: testRows)
+                }
+            }))
         .onChange(of: runnerHotReload)      { _, _ in applyRunnerSettings() }
         .onChange(of: runnerHotReloadDelay) { _, _ in applyRunnerSettings() }
         .onChange(of: runnerClearConsole)   { _, _ in applyRunnerSettings() }
@@ -309,6 +314,27 @@ struct StudioView: View {
         testRunner.timeoutSeconds       = testRunnerTimeout
         testRunner.coverageEnabled      = testRunnerCoverage
         testRunner.echoResultsToConsole = testRunnerConsole
+        // Decode the exclude-glob rows and convert each glob → a LuaCov Lua pattern.
+        // LuaCov strips a trailing ".lua" from filenames BEFORE matching excludes
+        // (file_included), so we strip it from the user's glob too — otherwise
+        // "main.lua" → "main%.lua" would never match the stripped "main".
+        func toPattern(_ glob: String) -> String {
+            var g = glob
+            if g.hasSuffix(".lua") { g = String(g.dropLast(4)) }
+            return GlobToLuaPattern.convert(g)
+        }
+        let excludeRows = [CoverageExcludeRow].decode(from: testRunnerCoverageExcludes)
+        var excludes = (excludeRows.isEmpty ? .defaultRows : excludeRows)
+            .map { $0.glob.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { toPattern($0) }
+        // Also exclude the configured test folders themselves — test files and
+        // their helpers/fixtures shouldn't count toward game-code coverage.
+        for row in testRows {
+            let folder = row.folder.trimmingCharacters(in: .whitespaces)
+            if !folder.isEmpty { excludes.append(toPattern(folder + "/**")) }
+        }
+        testRunner.coverageExcludes = excludes
     }
 
     /// Run all tests. Mutual exclusion (C9): never while the game runs/debugs.
@@ -432,8 +458,8 @@ private struct SidebarView: View {
                     onJump: { file, line in
                         onJump?(URL(fileURLWithPath: file), line)
                     },
-                    onOpenReport: { path in onOpenDoc?(path) },
-                    onOpenSettings: { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }
+                    onOpenReport: { path in onOpenDoc?(path) }
+                    // Settings opens via SettingsLink inside the empty state (macOS 14+).
                 )
             }
         }
@@ -487,6 +513,35 @@ private enum SidebarTab: String, CaseIterable, Identifiable {
 private struct TabSnapshot: Equatable {
     let id: UUID
     let url: URL
+}
+
+// MARK: - TestRunnerObservers
+//
+// Collapses the test-runner `.onChange` handlers into one modifier. Extracted so
+// `StudioView.body`'s modifier chain stays short enough for the Swift type-checker.
+private struct TestRunnerObservers: ViewModifier {
+    let timeout: Double
+    let coverage: Bool
+    let console: Bool
+    let foldersJSON: String
+    let covExcludes: String
+    let enabled: Bool
+    let isRunning: Bool
+    let applySettings: () -> Void
+    let rediscover: () -> Void
+    let onRunStart: () -> Void
+    let onRunFinish: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: timeout)     { _, _ in applySettings() }
+            .onChange(of: coverage)    { _, _ in applySettings() }
+            .onChange(of: console)     { _, _ in applySettings() }
+            .onChange(of: covExcludes) { _, _ in applySettings() }
+            .onChange(of: foldersJSON) { _, _ in applySettings(); rediscover() }
+            .onChange(of: enabled)     { _, on in if on { rediscover() } }
+            .onChange(of: isRunning)   { _, running in running ? onRunStart() : onRunFinish() }
+    }
 }
 
 // MARK: - Editor Area
@@ -608,7 +663,7 @@ private struct EditorAreaView: View {
                 // editable text (§3.8). Scoped to our docs (bundle help or a temp
                 // coverage report), not arbitrary project .md files.
                 if isTestRunnerDoc(item.url) {
-                    MarkdownDocView(url: item.url)
+                    MarkdownDocView(url: item.url, onJump: onJump)
                         .id(item.id)
                 } else if isConf && !confViewAsLua {
                     ConfEditorView(confURL: item.url, onSaved: { url in
@@ -1354,6 +1409,11 @@ private struct ConsolePanelView: View {
         }
         .onChange(of: isDebugging) { _, debugging in
             if debugging { selectedTab = .debug }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .testRunStarted)) { note in
+            // Debug test run → show Debug panel; normal test run → show Console.
+            let isDebug = (note.userInfo?["debug"] as? Bool) ?? false
+            selectedTab = isDebug ? .debug : .console
         }
     }
 

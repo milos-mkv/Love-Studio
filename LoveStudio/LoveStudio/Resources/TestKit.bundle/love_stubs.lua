@@ -1,25 +1,21 @@
--- love_stubs.lua — test doubles for the love.* API (§5.1, §5.2)
+-- love_stubs.lua — test doubles for the love.* API.
 --
--- Default behavior: every love.* call is doubled. The common subset is modeled
--- faithfully; everything else returns a *recursive spy proxy* so no call ever
--- crashes a test (a scalar default would crash the object path, e.g.
--- love.graphics.newImage():getWidth()).
+-- Every love.* call is doubled by default: the common subset is modeled, and
+-- everything else returns a recursive spy proxy so no call crashes a test (e.g.
+-- love.graphics.newImage():getWidth()). A test may opt into the real module via
+-- love.<module>.real(); the reset between tests restores the double.
 --
--- A test may opt into the REAL module for a subsystem via love.<module>.real()
--- (§5.1); the lifecycle reset restores the double afterward.
---
--- This module installs a global `love` table and returns a controller used by
--- the facade to reset state between tests and to swap in real modules.
+-- Installs a global `love` table and returns a controller the facade uses to reset
+-- state between tests and swap in real modules.
 
 local M = {}
 
--- The shared in-memory filesystem store (path -> bytes), shared with std_doubles'
--- io.* via M.fs so a test can write via love.filesystem and read via io (§3.3a).
+-- Shared in-memory filesystem store (path -> bytes), shared with std_doubles' io.*
+-- so a test can write via love.filesystem and read via io.
 M.fs = M.fs or { store = {} }
 
--- ── recursive spy proxy ──────────────────────────────────────────────────────
--- Survives call, index/method-chain, arithmetic, concat, length, comparison,
--- tostring. Records calls in `.calls` for assertion. (Validated in Phase 0.)
+-- A recursive spy proxy: survives call, index/method-chain, arithmetic, concat,
+-- length, comparison, and tostring, recording calls in `.calls`.
 local function makeSpy(path)
   local calls = {}
   local proxy
@@ -54,8 +50,7 @@ local function makeSpy(path)
 end
 M.makeSpy = makeSpy
 
--- ── faithfully-modeled common subset ─────────────────────────────────────────
--- Built fresh on each reset so state never leaks between tests.
+-- The modeled common subset, rebuilt on each reset so state never leaks.
 local function buildModeled(fs)
   local time = 0  -- controllable clock for love.timer (deterministic)
 
@@ -121,8 +116,7 @@ local function buildModeled(fs)
   }
 end
 
--- ── install ──────────────────────────────────────────────────────────────────
--- Returns a controller: { reset(), useReal(name), G } where G is the love table.
+-- Install the global `love` table; returns a controller { reset(), G = love }.
 function M.install()
   local modeled = buildModeled(M.fs)
   local realModules = {}        -- name -> real impl when a test opts in
@@ -139,8 +133,8 @@ function M.install()
     end,
   })
 
-  -- Attach a .real() opener to each modeled module so a test can opt in (§5.1).
-  -- love.<module>.real() swaps in the genuine implementation for this test.
+  -- Give each modeled module a .real() opener so love.<module>.real() swaps in the
+  -- genuine implementation for the current test.
   for name, mod in pairs(modeled) do
     if type(mod) == "table" then
       mod.real = function()
@@ -155,8 +149,8 @@ function M.install()
   controller.G = love
 
   function controller.reset()
-    -- rebuild modeled state, drop opted-in real modules, clear cached spies,
-    -- and clear the shared fs store (§3.3a lifecycle reset).
+    -- rebuild modeled state, drop opted-in real modules, clear cached spies and
+    -- the shared fs store
     modeled = buildModeled(M.fs)
     realModules = {}
     for k in pairs(love) do rawset(love, k, nil) end

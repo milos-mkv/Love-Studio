@@ -1,11 +1,9 @@
 import SwiftUI
+import AppKit
 
-// MARK: - TestExplorerView
-//
-// The Test Explorer (§3.6, Phase D): a header toolbar + a tree of suites/tests with
-// status icons, click-to-source, per-test run/debug, failure-on-expand, and the
-// coverage % (clickable → report tab). Lives in the left sidebar `tests` tab.
-
+// The Test Explorer: a header toolbar plus a tree of suites/tests with status icons,
+// click-to-source, per-test run/debug, failure detail on expand, and a clickable
+// coverage %. Lives in the left sidebar's `tests` tab.
 struct TestExplorerView: View {
     @Bindable var runner: TestRunner
     let projectRoot: URL?
@@ -13,7 +11,7 @@ struct TestExplorerView: View {
     let canRun: Bool                  // false while the game is running/debugging (C9)
 
     var onJump: ((String, Int) -> Void)?     // click a test → open file at line
-    var onOpenReport: ((String) -> Void)?    // click coverage % → open report tab (§3.9)
+    var onOpenReport: ((String) -> Void)?    // click coverage % → open report tab
     var onOpenSettings: (() -> Void)?        // empty-state link → Settings → Runner (B5)
 
     var body: some View {
@@ -36,7 +34,12 @@ struct TestExplorerView: View {
             }
             toolButton("arrow.clockwise", "Refresh") { discover() }
                 .disabled(projectRoot == nil)
-            toolButton("chevron.up.chevron.down", "Collapse All") { collapseAll() }
+            // One button; icon reflects the action it will perform. When anything is
+            // expanded → shows "collapse all"; when all collapsed → shows "expand all".
+            toolButton(allExpanded ? "chevron.up" : "chevron.down",
+                       allExpanded ? "Collapse All" : "Expand All") {
+                if allExpanded { collapseAll() } else { expandAll() }
+            }
 
             Spacer()
 
@@ -56,18 +59,31 @@ struct TestExplorerView: View {
         let s = runner.summary
         if s.total > 0 || runner.isRunning {
             HStack(spacing: 8) {
-                if s.passed > 0 { countPill("\(s.passed)", .green) }
+                // Only failures/errors are worth a count here — the per-suite
+                // "(passed/total)" badges already show passes.
                 if s.failed > 0 { countPill("\(s.failed)", .red) }
                 if s.error > 0  { countPill("\(s.error)", .orange) }
+
+                // Coverage: a pill button (secondary color) when a report exists.
                 if let pct = s.coveragePercent {
-                    Button { if let r = runner.lastReportText, !r.isEmpty { onOpenReport?(reportTempPath(r)) } } label: {
-                        Text(String(format: "%.0f%%", pct))
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(coverageColor(pct))
+                    let hasReport = !(runner.lastReportText ?? "").isEmpty
+                    Button {
+                        if let r = runner.lastReportText, !r.isEmpty { onOpenReport?(reportTempPath(r)) }
+                    } label: {
+                        Text("Coverage \(String(format: "%.0f%%", pct))")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
                     }
                     .buttonStyle(.plain)
-                    .help("Open coverage report")
-                    .disabled((runner.lastReportText ?? "").isEmpty)
+                    .help(hasReport ? "Open coverage report" : "Run all tests to generate a coverage report")
+                    .disabled(!hasReport)
+                    .onHover { inside in
+                        if inside && hasReport { NSCursor.pointingHand.set() }
+                        else { NSCursor.arrow.set() }
+                    }
                 }
             }
         }
@@ -101,12 +117,62 @@ struct TestExplorerView: View {
         VStack(spacing: 10) {
             Spacer()
             Image(systemName: "flask").font(.system(size: 28)).foregroundStyle(.tertiary)
-            Text("No tests found.").font(.subheadline).foregroundStyle(.secondary)
-            Button("Configure test folders…") { onOpenSettings?() }
-                .buttonStyle(.link).font(.caption)
+            Text(emptyTitle).font(.subheadline).foregroundStyle(.secondary)
+            if !emptyDetail.isEmpty {
+                Text(emptyDetail)
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+            // SettingsLink is the official macOS 14+ way to open the Settings scene.
+            SettingsLink {
+                Text(rowsConfigured ? "Edit test folders…" : "Configure test folders…")
+            }
+            .buttonStyle(.link).font(.caption)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Empty-state messaging
+    //
+    // Distinguish "no folders set up" from "folders set, but nothing matched" so we
+    // don't tell a user who already configured folders to go configure them.
+
+    private var rowsConfigured: Bool {
+        rows.contains { !$0.folder.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
+    // Configured folders that don't exist on disk (relative to the project root).
+    private var missingFolders: [String] {
+        guard let root = projectRoot else { return [] }
+        var missing: [String] = []
+        for row in rows {
+            let f = row.folder.trimmingCharacters(in: .whitespaces)
+            guard !f.isEmpty else { continue }
+            var isDir: ObjCBool = false
+            let path = root.appendingPathComponent(f).path
+            if !(FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue) {
+                missing.append(f)
+            }
+        }
+        return missing
+    }
+
+    private var emptyTitle: String {
+        if !rowsConfigured { return "No test folders configured." }
+        if !missingFolders.isEmpty { return "Test folder not found." }
+        return "No tests found."
+    }
+
+    private var emptyDetail: String {
+        if !rowsConfigured { return "" }
+        if !missingFolders.isEmpty {
+            return "Couldn't find: \(missingFolders.joined(separator: ", "))"
+        }
+        // folders exist but nothing matched the glob
+        let globs = rows.map { $0.glob }.filter { !$0.isEmpty }
+        return "No files matched \(globs.joined(separator: ", ")). Check your test files and glob."
     }
 
     // MARK: Actions
@@ -128,17 +194,31 @@ struct TestExplorerView: View {
         guard let root = projectRoot, canRun else { return }
         runner.debug(testId: id, projectRoot: root, rows: rows)
     }
-    private func collapseAll() {
-        func collapse(_ n: TestNode) { n.isExpanded = false; n.children.forEach(collapse) }
-        runner.roots.forEach(collapse)
+    // True if any suite is expanded, so the button offers "collapse".
+    private var allExpanded: Bool {
+        func anyExpanded(_ n: TestNode) -> Bool {
+            (n.kind == .suite && n.isExpanded) || n.children.contains(where: anyExpanded)
+        }
+        return runner.roots.contains(where: anyExpanded)
     }
 
-    // Persist the coverage report text to a temp file so it can open as a tab.
+    private func setAllExpanded(_ expanded: Bool) {
+        func set(_ n: TestNode) {
+            if n.kind == .suite { n.isExpanded = expanded }
+            n.children.forEach(set)
+        }
+        runner.roots.forEach(set)
+    }
+    private func expandAll()   { setAllExpanded(true) }
+    private func collapseAll() { setAllExpanded(false) }
+
+    // Persist the coverage report to a temp file so it can open as a tab. The Lua
+    // side already wrote it as Markdown with `lsjump://` links — write as-is (no
+    // code fence, which would suppress the links).
     private func reportTempPath(_ text: String) -> String {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("coverage-report.md")
-        let fenced = "# Coverage Report\n\n```\n\(text)\n```\n"
-        try? fenced.write(to: url, atomically: true, encoding: .utf8)
+        try? text.write(to: url, atomically: true, encoding: .utf8)
         return url.path
     }
 
@@ -172,8 +252,8 @@ struct TestExplorerView: View {
 
 // MARK: - TestNodeRow
 
-/// One row in the tree: status icon + name, disclosure for suites, hover run/debug
-/// for leaves, expand-to-see-message for failures (§Phase D, B4).
+// One row in the tree: status icon + name, disclosure for suites, hover run/debug
+// for leaves, and the failure message on expand.
 private struct TestNodeRow: View {
     @Bindable var node: TestNode
     let depth: Int
@@ -215,8 +295,12 @@ private struct TestNodeRow: View {
         HStack(spacing: 6) {
             Color.clear.frame(width: CGFloat(depth) * 14)
 
-            // disclosure chevron (suites, or failed leaves with detail)
+            // disclosure chevron (suites, or failed leaves with detail) — a real
+            // Button so the toggle reliably fires (a row-wide onTapGesture can be
+            // swallowed by SwiftUI hit-testing).
             if isSuite || node.hasDetail {
+                // Plain image — the toggle happens on the row's onTapGesture (a
+                // nested Button gets swallowed by the row's contentShape/tap).
                 Image(systemName: node.isExpanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.secondary).frame(width: 12)
@@ -234,6 +318,13 @@ private struct TestNodeRow: View {
             }
 
             Text(node.name).font(.system(size: 12)).lineLimit(1)
+
+            // Suite/file rows show "(passed/total)".
+            if isSuite {
+                Text("(\(node.passedCount)/\(node.testCount))")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
 
             if let ms = node.durationMs, ms > 0, !isSuite {
                 Text("\(ms)ms").font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
@@ -256,6 +347,7 @@ private struct TestNodeRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture {
+            // Suites and detail-bearing leaves toggle expansion; plain leaves jump.
             if isSuite || node.hasDetail {
                 node.isExpanded.toggle()
             } else if let file = node.file, let line = node.line {

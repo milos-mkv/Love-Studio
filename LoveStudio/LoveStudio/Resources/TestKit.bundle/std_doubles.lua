@@ -1,27 +1,22 @@
--- std_doubles.lua — deterministic standard-library doubles for USER code (§3.3a)
+-- std_doubles.lua — deterministic standard-library doubles for user code.
 --
--- The framework (luaunit/luassert/luacov) keeps the REAL os/io/debug — it needs
--- real timing, real stdout for the wire protocol, and real debug.traceback for
--- stack info. These doubles are installed only around the user's module-under-test
--- and restored between tests.
+-- Installed around the user's code and restored between tests; the framework itself
+-- keeps the real os/io/debug for timing, the wire protocol, and tracebacks.
 --
---   os.time/date/clock -> controllable fake clock (deterministic)
---   os.exit            -> stubbed (a test must never kill the process)
---   os.getenv          -> controlled/empty
---   io.*               -> in-memory filesystem, SHARED with love.filesystem (§3.3a)
---   math.random        -> seeded/deterministic
---   print              -> routed to a capture sink (the facade tags it per test)
---
--- A test can opt back into the real libs per case via the controller (the facade
--- exposes this); default is the doubles below.
+--   os.time/date/clock -> fixed, controllable clock
+--   os.exit            -> disabled (a test must never kill the process)
+--   os.getenv          -> empty
+--   io.*               -> in-memory filesystem, shared with love.filesystem
+--   math.random        -> deterministic
+--   print              -> routed to a capture sink, tagged per test by the facade
 
 local M = {}
 
--- Canonicalize a path to the same key form love_stubs uses, so io and
--- love.filesystem agree on one backing store (§3.3a). Strips leading slashes.
+-- Canonicalize a path to the key form love_stubs uses so io and love.filesystem
+-- share one backing store.
 local function canonical(p) return tostring(p):gsub("^/+", "") end
 
--- ── in-memory file handle over the shared store ──────────────────────────────
+-- An in-memory file handle over the shared store.
 local function makeHandle(store, key, mode)
   local buf = store[key] or ""
   local pos = 1
@@ -73,10 +68,8 @@ local function makeHandle(store, key, mode)
   return h
 end
 
--- ── install ──────────────────────────────────────────────────────────────────
--- fsStore: the shared `path -> bytes` table (pass love_stubs.fs.store).
--- sink:    function(text) called for user print() (the facade supplies it).
--- Returns a controller: { reset(), restoreReal(libname), G = sandbox globals }.
+-- Install the doubles. `fsStore` is the shared path->bytes table (love_stubs.fs.store);
+-- `sink` receives user print() output. Returns a controller with apply/restoreReal/reset.
 function M.install(fsStore, sink)
   fsStore = fsStore or {}
   sink = sink or function() end
@@ -144,13 +137,8 @@ function M.install(fsStore, sink)
   function controller.restoreReal()
     for k, v in pairs(reals) do _G[k] = v end
   end
-  -- per-lib opt back into the real impl for one test (§3.3a opt-out)
-  function controller.useReal(libname)
-    if reals[libname] ~= nil then _G[libname] = reals[libname] end
-  end
   function controller.reset()
-    clock = 0
-    -- fsStore is owned/cleared by love_stubs.reset(); we just reset the clock.
+    clock = 0   -- fsStore is cleared by love_stubs.reset(); just reset the clock
     controller.restoreReal()
   end
 

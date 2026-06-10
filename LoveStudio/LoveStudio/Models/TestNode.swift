@@ -3,7 +3,6 @@ import SwiftUI
 
 // MARK: - TestStatus
 
-/// Result state of a test (leaf) or the aggregated state of a suite (§Phase D).
 enum TestStatus: String {
     case notRun
     case running
@@ -13,7 +12,7 @@ enum TestStatus: String {
     case skipped
     case cancelled  // user-initiated Stop (not timeout)
 
-    /// SF Symbol shown in the Explorer row. All built-in symbols — no custom SVG.
+    // SF Symbol shown in the Explorer row.
     var iconName: String {
         switch self {
         case .passed:    return "checkmark.circle.fill"
@@ -37,8 +36,8 @@ enum TestStatus: String {
         }
     }
 
-    /// Severity order for suite aggregation: a parent rolls up its worst child.
-    /// error > failed > running > notRun/skipped/cancelled > passed.
+    // Severity order for suite aggregation (a parent rolls up its worst child):
+    // error > failed > running > notRun > skipped/cancelled > passed.
     var severity: Int {
         switch self {
         case .error:     return 5
@@ -61,12 +60,9 @@ enum TestKind {
 
 // MARK: - TestNode
 
-/// A node in the Test Explorer tree. Leaves are individual tests; suites group
-/// children. Mirrors the `@Observable` tree style of `ProjectItem`.
-///
-/// `id` is the **stable, path-based** identifier the Lua facade emits in each
-/// `[[LS_TEST]]` line (e.g. `combat.test.lua > Damage > applies armor`); results
-/// correlate to nodes by this id, never by display name (§4.4).
+// A node in the Test Explorer tree: leaves are tests, suites group children. `id`
+// is the stable path-based identifier the Lua facade emits (e.g.
+// "combat.test.lua > Damage > applies armor"); results correlate by id, not name.
 @Observable
 final class TestNode: Identifiable {
     let id: String
@@ -82,7 +78,7 @@ final class TestNode: Identifiable {
     // Result fields (filled by a run; meaningful for `.test` leaves).
     var status: TestStatus
     var durationMs: Int?
-    var message: String?      // failure / error detail, shown on expand (§Phase D, B4)
+    var message: String?      // failure / error detail, shown on expand
 
     init(id: String,
          name: String,
@@ -105,8 +101,8 @@ final class TestNode: Identifiable {
 
     // MARK: Aggregation
 
-    /// For a suite, the rolled-up status of its descendants (worst-child wins).
-    /// For a leaf, just its own status. (§Phase D suite aggregation.)
+    // For a suite, the rolled-up status of its descendants (worst child wins);
+    // for a leaf, just its own status.
     var effectiveStatus: TestStatus {
         guard kind == .suite, !children.isEmpty else { return status }
         var worst = TestStatus.passed
@@ -117,14 +113,24 @@ final class TestNode: Identifiable {
         return worst
     }
 
-    /// A failed/errored leaf is expandable to reveal its `message`.
+    // A failed/errored leaf is expandable to reveal its message.
     var hasDetail: Bool {
         kind == .test && (status == .failed || status == .error) && (message?.isEmpty == false)
     }
 
+    // MARK: Counts (for the suite "(passed/total)" badge)
+
+    var testCount: Int {
+        kind == .test ? 1 : children.reduce(0) { $0 + $1.testCount }
+    }
+
+    var passedCount: Int {
+        if kind == .test { return status == .passed ? 1 : 0 }
+        return children.reduce(0) { $0 + $1.passedCount }
+    }
+
     // MARK: Lookup
 
-    /// Find a node by its stable id anywhere in this subtree.
     func find(id: String) -> TestNode? {
         if self.id == id { return self }
         for child in children {
@@ -133,7 +139,7 @@ final class TestNode: Identifiable {
         return nil
     }
 
-    /// Reset this subtree's leaves to `.notRun` (clears prior results) before a run.
+    // Reset this subtree's leaves to .notRun before a run.
     func resetResults() {
         if kind == .test {
             status = .notRun
@@ -146,14 +152,13 @@ final class TestNode: Identifiable {
 
 // MARK: - Run summary
 
-/// Counts for the Explorer header (pass/fail/duration + optional coverage %).
 struct TestRunSummary {
     var passed = 0
     var failed = 0
     var error = 0
     var skipped = 0
     var totalMs = 0
-    var coveragePercent: Double?   // nil unless coverage was enabled (§3.9)
+    var coveragePercent: Double?   // nil unless coverage was enabled
 
     var total: Int { passed + failed + error + skipped }
 }

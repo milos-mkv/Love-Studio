@@ -1,91 +1,131 @@
 import Foundation
 import Observation
 
-// MARK: - TestRunner
-//
-// Runs the user's Lua tests in the bundled `love` run headless (§5.5), parses the
-// structured `[[LS_TEST]]` / `[[LS_OUT]]` / `[[LS_COV]]` wire protocol (§3.5) into
-// the `TestNode` tree, and exposes results to the Explorer.
-//
-// Discovery (the pre-run hollow tree, §5.3/§4.1) is a static parse; the run is
-// authoritative (an emitted id with no node is created, §4.1).
-//
-// All tree mutation hops to the main actor (§4.3a).
-
+// Runs the user's Lua tests in the bundled `love` binary, parses the wire protocol
+// it emits ([[LS_TEST]] / [[LS_OUT]] / [[LS_COV]] / [[LS_TREE]]) into the TestNode
+// tree, and exposes results to the Explorer. The run is authoritative: an emitted
+// id with no matching node creates one.
 @MainActor
 @Observable
 final class TestRunner {
 
-    // MARK: Observable state
     private(set) var roots: [TestNode] = []
     private(set) var summary = TestRunSummary()
     private(set) var isRunning = false
-    private(set) var lastReportText: String?     // LuaCov report, for the clickable-% tab (§3.9)
-    let coverage = CoverageStore()               // per-line coverage for gutters
+    private(set) var lastReportText: String?     // LuaCov report shown in the clickable-% tab
+    let coverage = CoverageStore()
 
-    // Callbacks set by the view layer
-    var onConsole: ((String) -> Void)?           // user print + TAP → Console
-    var onErrorJump: ((String, Int) -> Void)?    // unused here; parity with LoveRunner
+    var onConsole: ((String) -> Void)?
+    var onErrorJump: ((String, Int) -> Void)?    // parity with LoveRunner; unused here
 
-    // Settings (mirrored from AppStorage by the view)
+    // Mirrored from AppStorage by the view.
     var timeoutSeconds: Double = 30
     var coverageEnabled = false
-    var echoResultsToConsole = true   // mirror per-test results into the Console (§3.7)
+    var coverageExcludes: [String] = []
+    var echoResultsToConsole = true
 
-    // Debugger wiring (supplied by the view, for per-test debug §5.4)
+    // Supplied by the view for per-test debugging.
     var debugServer: DebugServer?
     var breakpointManager: BreakpointManager?
 
-    // MARK: Private
     private var process: Process?
     private var stdoutPipe: Pipe?
-    private var lineBuffer = ""                   // buffers partial lines across reads (§4.3a)
+    private var lineBuffer = ""                   // partial lines across reads
     private var nodeIndex: [String: TestNode] = [:]
     private var timeoutTimer: Timer?
-    private var lastStartedId: String?            // for timeout attribution (§4.3)
+    private var lastStartedId: String?            // for timeout attribution
     private var isDebugRun = false                // debug runs skip the timeout (breakpoints pause)
-    private var scopedAccessActive = false        // security-scoped access held during a run (§Phase G)
+    private var isCollecting = false              // discovery pass, not a test run
+    private var runTreeRebuilt = false            // has this run rebuilt the tree from results yet?
+    private var isFilteredRun = false             // single-test/suite run — don't wipe the tree
+    private var preservedExpanded = Set<String>() // expansion state carried across a run rebuild
+    private var hadPriorTree = false
+    private var scopedAccessActive = false
     private var scopedRoot: URL?
+    private var launcherDir: URL?                 // temp dir for the current run; cleaned up on finish
 
-    // The temp launcher dir for the current run (cleaned up on finish/stop).
-    private var launcherDir: URL?
+    // MARK: - Discovery
 
-    // MARK: - Discovery (static parse, §5.3)
-
-    /// Parse the configured test files into a provisional `TestNode` tree without
-    /// executing them. Called on manual Refresh and FileWatcher changes (§4.6).
+    // Build the test tree via a headless collect pass: Lua loads the test files and
+    // emits the tree as [[LS_TREE]] lines, so it matches exactly what will run.
+    // Called on manual Refresh and FileWatcher changes.
     @MainActor
     func discover(projectRoot: URL, rows: [TestFolderGlob]) {
+        guard !isRunning else { return }
+
         let files = TestDiscovery.matchingFiles(projectRoot: projectRoot, rows: rows)
-        var newRoots: [TestNode] = []
-        var index: [String: TestNode] = [:]
-        for file in files {
-            if let fileNode = TestDiscovery.parse(file: file, projectRoot: projectRoot) {
-                newRoots.append(fileNode)
-            }
+        guard !files.isEmpty else {
+            roots = []; nodeIndex = [:]
+            return
         }
-        // index every node by id for fast result correlation
-        func indexAll(_ node: TestNode) {
-            index[node.id] = node
-            node.children.forEach(indexAll)
+        guard let loveApp = LoveRuntimeResolver.bundledLoveAppURL(),
+              let kitURL = Bundle.main.url(forResource: "TestKit", withExtension: "bundle")
+                        ?? Bundle.main.resourceURL?.appendingPathComponent("TestKit.bundle") else {
+            onConsole?("Test runner: could not locate love runtime or TestKit.")
+            return
         }
-        newRoots.forEach(indexAll)
-        self.roots = newRoots
-        self.nodeIndex = index
+
+        // preserve expansion across the rebuild; default-open suites on first discovery
+        preservedExpanded = []
+        for (id, node) in nodeIndex where node.isExpanded { preservedExpanded.insert(id) }
+        hadPriorTree = !nodeIndex.isEmpty
+        roots = []
+        nodeIndex = [:]
+        lineBuffer = ""
+
+        let dir: URL
+        do {
+            dir = try TestLauncher.build(projectRoot: projectRoot, kitURL: kitURL,
+                                         files: files, filter: nil, debug: false,
+                                         coverage: false, collect: true)
+        } catch {
+            onConsole?("Test runner: failed to prepare discovery — \(error.localizedDescription)")
+            return
+        }
+        launcherDir = dir
+        isCollecting = true
+        isDebugRun = false
+        launch(loveApp: loveApp, gameDir: dir, projectRoot: projectRoot)
     }
 
     // MARK: - Run
 
-    /// Run all tests, a suite, or a single test (filter == a node id, nil == all).
+    // Run all tests, a suite, or a single test (filter == a node id, nil == all).
     @MainActor
     func run(projectRoot: URL, rows: [TestFolderGlob], filter: String?, debug: Bool = false) {
         guard !isRunning else { return }
-        roots.forEach { $0.resetResults() }
-        summary = TestRunSummary()
-        lastReportText = nil
-        coverage.clear()
+        // Surface the relevant bottom panel: Debug for a debug run, Console otherwise.
+        NotificationCenter.default.post(name: .testRunStarted, object: nil,
+                                        userInfo: ["debug": debug])
+        isFilteredRun = (filter != nil)
         lineBuffer = ""
         lastStartedId = nil
+        preservedExpanded = []
+
+        // A FULL run resets the summary and clears coverage (it will recompute both).
+        // A FILTERED run does neither: it shows only that test's result, and keeps
+        // the last full run's coverage % / report rather than blanking them.
+        if !isFilteredRun {
+            summary = TestRunSummary()
+            lastReportText = nil
+            coverage.clear()
+        }
+
+        // A FULL run (no filter) is authoritative — it rebuilds the tree from the
+        // emitted results (so the static-parse nesting can't create duplicates).
+        // A FILTERED run must NOT wipe the tree, or every other test would vanish.
+        runTreeRebuilt = isFilteredRun   // filtered → skip the rebuild-on-first-result
+        if isFilteredRun {
+            // The other (not-run-this-time) tests go NEUTRAL; only the targeted
+            // node(s) will get a fresh result from this run.
+            for (_, node) in nodeIndex where node.kind == .test {
+                node.status = .notRun
+                node.durationMs = nil
+                node.message = nil
+            }
+        } else {
+            roots.forEach { $0.resetResults() }   // full run: all back to neutral
+        }
 
         guard let loveApp = LoveRuntimeResolver.bundledLoveAppURL(),
               let kitURL = Bundle.main.url(forResource: "TestKit", withExtension: "bundle")
@@ -100,6 +140,11 @@ final class TestRunner {
             return
         }
 
+        // Coverage only makes sense for a FULL run — a single-test run would report
+        // a misleading whole-project %. Skip it for filtered runs (and keep the last
+        // full-run coverage shown instead of overwriting it with a partial number).
+        let coverageForRun = coverageEnabled && !isFilteredRun
+
         let dir: URL
         do {
             dir = try TestLauncher.build(projectRoot: projectRoot,
@@ -107,7 +152,8 @@ final class TestRunner {
                                          files: files,
                                          filter: filter,
                                          debug: debug,
-                                         coverage: coverageEnabled)
+                                         coverage: coverageForRun,
+                                         coverageExcludes: coverageExcludes)
         } catch {
             onConsole?("Test runner: failed to prepare launcher — \(error.localizedDescription)")
             return
@@ -117,9 +163,8 @@ final class TestRunner {
         launch(loveApp: loveApp, gameDir: dir, projectRoot: projectRoot)
     }
 
-    /// Debug a single test under mobdebug (§5.4): start the DebugServer listening,
-    /// then run just that test with the debug bootstrap that connects to it.
-    /// Reuses `DebugServer` (not `runDebug`, which would launch the real game).
+    // Debug a single test under mobdebug: start the DebugServer listening, then run
+    // just that test with the debug bootstrap that connects to it.
     @MainActor
     func debug(testId: String, projectRoot: URL, rows: [TestFolderGlob]) {
         guard !isRunning else { return }
@@ -150,9 +195,8 @@ final class TestRunner {
             return
         }
 
-        // Security-scoped access to the project for the duration of the run, so the
-        // spawned `love` can read the user's game (resolved via package.path) — same
-        // model as Project/LoveRunner (§Phase G). Released in finishRun().
+        // Hold security-scoped access for the run so the spawned `love` can read the
+        // user's project. Released in finishRun().
         scopedAccessActive = projectRoot.startAccessingSecurityScopedResource()
         scopedRoot = projectRoot
 
@@ -182,15 +226,17 @@ final class TestRunner {
             try p.run()
             process = p
             stdoutPipe = outPipe
-            isRunning = true
-            startTimeout()
+            // `isRunning` drives the run UI and the auto-switch to the Tests panel.
+            // The discovery pass is background work, so it leaves isRunning false
+            // (tracking its lifecycle via isCollecting) to avoid stealing focus.
+            if !isCollecting { isRunning = true; startTimeout() }
         } catch {
             onConsole?("Test runner: launch error — \(error.localizedDescription)")
             cleanup()
         }
     }
 
-    // MARK: - Ingest / parse (§3.5, §4.1, §4.3a)
+    // MARK: - Ingest / parse
 
     @MainActor
     private func ingest(_ chunk: String) {
@@ -204,7 +250,9 @@ final class TestRunner {
 
     @MainActor
     private func handle(line: String) {
-        if line.hasPrefix("[[LS_TEST]]") {
+        if line.hasPrefix("[[LS_TREE]]") {
+            if let rec = WireParser.parseTree(line) { applyTreeRecord(rec) }
+        } else if line.hasPrefix("[[LS_TEST]]") {
             if let rec = WireParser.parseTest(line) { applyResult(rec) }
         } else if line.hasPrefix("[[LS_OUT]]") {
             if let out = WireParser.parseOut(line) { onConsole?(out.text) }
@@ -222,11 +270,21 @@ final class TestRunner {
 
     @MainActor
     private func applyResult(_ rec: WireParser.TestRecord) {
+        // The run is authoritative: on the first result, rebuild the tree from the
+        // emitted ids so the displayed tree always matches what actually ran.
+        if !runTreeRebuilt {
+            runTreeRebuilt = true
+            // preserve open suites across the rebuild; hadPriorTree distinguishes a
+            // first run (default-open) from the user having collapsed everything.
+            hadPriorTree = !nodeIndex.isEmpty
+            for (id, node) in nodeIndex where node.isExpanded { preservedExpanded.insert(id) }
+            roots = []
+            nodeIndex = [:]
+        }
         let node: TestNode
         if let existing = nodeIndex[rec.id] {
             node = existing
         } else {
-            // run-authoritative: an emitted id with no discovered node is created (§4.1)
             node = insertSynthetic(rec)
         }
         node.status = rec.status
@@ -237,13 +295,11 @@ final class TestRunner {
         lastStartedId = rec.id
         bumpSummary(rec.status, ms: rec.ms)
 
-        // ALSO echo a human-readable result to the Console (in addition to driving
-        // the Explorer tree) so there's a complete, copy-pasteable run log.
         echoToConsole(rec)
     }
 
-    /// One readable line per result → Console; failures/errors append their message.
-    /// Gated by the "echo results to console" setting (§3.7).
+    // One readable line per result to the Console (failures/errors append their
+    // message), gated by the "echo results to console" setting.
     @MainActor
     private func echoToConsole(_ rec: WireParser.TestRecord) {
         guard echoResultsToConsole else { return }
@@ -269,19 +325,49 @@ final class TestRunner {
 
     @MainActor
     private func insertSynthetic(_ rec: WireParser.TestRecord) -> TestNode {
-        // Build/attach a path so data-driven tests still appear (§4.1).
-        let leaf = TestNode(id: rec.id, name: rec.name, kind: .test,
-                            file: rec.file, line: rec.line)
-        // Group under a synthetic root keyed by the file segment of the id.
-        let rootKey = rec.id.components(separatedBy: " > ").first ?? rec.id
-        if let root = nodeIndex[rootKey] {
-            root.children.append(leaf)
-        } else {
-            let root = TestNode(id: rootKey, name: rootKey, kind: .suite, children: [leaf])
-            roots.append(root)
-            nodeIndex[rootKey] = root
+        return ensureTestNode(id: rec.id, name: rec.name, file: rec.file, line: rec.line)
+    }
+
+    // Apply one [[LS_TREE]] record from discovery: ensure the suite path and leaf
+    // exist (structure only, no status).
+    @MainActor
+    private func applyTreeRecord(_ rec: WireParser.TreeRecord) {
+        _ = ensureTestNode(id: rec.id, name: rec.name, file: rec.file, line: rec.line)
+    }
+
+    // Fetch or build the test node for `id`, creating any missing suite ancestors
+    // from the id's " > " segments.
+    @MainActor
+    private func ensureTestNode(id: String, name: String, file: String, line: Int) -> TestNode {
+        if let existing = nodeIndex[id] { return existing }
+        let segments = id.components(separatedBy: " > ")
+        guard segments.count >= 1 else {
+            let leaf = TestNode(id: id, name: name, kind: .test, file: file, line: line)
+            roots.append(leaf); nodeIndex[id] = leaf; return leaf
         }
-        nodeIndex[rec.id] = leaf
+        var parent: TestNode?
+        var accumulatedID = ""
+        for (i, seg) in segments.enumerated() {
+            accumulatedID = accumulatedID.isEmpty ? seg : "\(accumulatedID) > \(seg)"
+            let isLeaf = (i == segments.count - 1)
+            if isLeaf {
+                let leaf = TestNode(id: id, name: name, kind: .test, file: file, line: line)
+                if let parent { parent.children.append(leaf) } else { roots.append(leaf) }
+                nodeIndex[id] = leaf
+                return leaf
+            }
+            if let existing = nodeIndex[accumulatedID] {
+                parent = existing
+            } else {
+                let suite = TestNode(id: accumulatedID, name: seg, kind: .suite, file: file)
+                suite.isExpanded = preservedExpanded.contains(accumulatedID) || !hadPriorTree
+                if let parent { parent.children.append(suite) } else { roots.append(suite) }
+                nodeIndex[accumulatedID] = suite
+                parent = suite
+            }
+        }
+        let leaf = TestNode(id: id, name: name, kind: .test, file: file, line: line)
+        nodeIndex[id] = leaf
         return leaf
     }
 
@@ -296,7 +382,7 @@ final class TestRunner {
         }
     }
 
-    // MARK: - Timeout (§4.3)
+    // MARK: - Timeout
 
     @MainActor
     private func startTimeout() {
@@ -310,7 +396,7 @@ final class TestRunner {
     @MainActor
     private func handleTimeout() {
         guard isRunning else { return }
-        // Attribute the kill to the last-started-unfinished test (§4.3).
+        // Attribute the kill to the last-started, unfinished test.
         if let id = lastStartedId, let node = nodeIndex[id], node.status == .running || node.status == .notRun {
             node.status = .error
             node.message = "Timed out after \(Int(timeoutSeconds))s"
@@ -331,19 +417,52 @@ final class TestRunner {
 
     @MainActor
     private func terminate() {
+        // Stop the debug server first: a process paused at a breakpoint is blocked in
+        // mobdebug's socket receive and won't die on terminate() until that unblocks.
+        if isDebugRun { debugServer?.stop(); isDebugRun = false }
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
         process?.terminate()
-        finishRun()
+        finishRun(drainPipe: false)
     }
 
     @MainActor
-    private func finishRun() {
+    private func finishRun(drainPipe: Bool = true) {
         guard isRunning || process != nil else { return }
         timeoutTimer?.invalidate(); timeoutTimer = nil
-        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+        // On a normal finish, drain the pipe to catch the final chunk (which carries
+        // [[LS_COV]]) that the async readabilityHandler may not have delivered yet.
+        // Skipped on a force-stop: `availableData` blocks until EOF, and a process
+        // paused at a breakpoint may not have died yet, which would hang the UI.
+        if drainPipe, let fh = stdoutPipe?.fileHandleForReading {
+            fh.readabilityHandler = nil
+            let remaining = fh.availableData
+            if !remaining.isEmpty, let s = String(data: remaining, encoding: .utf8) {
+                ingest(s)
+            }
+            if !lineBuffer.isEmpty {
+                let leftover = lineBuffer
+                lineBuffer = ""
+                handle(line: leftover)
+            }
+        } else {
+            stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+        }
         process = nil
         stdoutPipe = nil
         isRunning = false
+
+        // A discovery (collect) pass only built the tree — no results/coverage.
+        if isCollecting {
+            isCollecting = false
+            if scopedAccessActive, let root = scopedRoot {
+                root.stopAccessingSecurityScopedResource()
+            }
+            scopedAccessActive = false
+            scopedRoot = nil
+            cleanup()
+            return
+        }
+
         // Read the coverage report (if any) before cleaning the launcher dir.
         if coverageEnabled, let dir = launcherDir {
             let report = dir.appendingPathComponent("luacov.report.out")
@@ -354,7 +473,6 @@ final class TestRunner {
             debugServer?.stop()
             isDebugRun = false
         }
-        // Release security-scoped access held for the run (§Phase G).
         if scopedAccessActive, let root = scopedRoot {
             root.stopAccessingSecurityScopedResource()
         }

@@ -1,11 +1,8 @@
 import Foundation
 
-// MARK: - WireParser
-//
-// Parses the structured wire lines the Lua facade emits (§3.5). Each line is a
-// sentinel prefix followed by a JSON object. Fields are JSON-escaped, so JSON
-// decoding recovers text containing `}`, newlines, or the sentinel itself.
-
+// Parses the wire lines the Lua facade emits: a sentinel prefix followed by a JSON
+// object. Fields are JSON-escaped, so decoding recovers text containing `}`,
+// newlines, or the sentinel itself.
 enum WireParser {
 
     struct TestRecord {
@@ -32,11 +29,31 @@ enum WireParser {
         return TestRecord(
             id: id,
             name: obj["name"] as? String ?? id,
-            status: TestStatus(rawValue: mapStatus(statusRaw)) ?? .error,
+            status: TestStatus(rawValue: statusRaw) ?? .error,
             file: obj["file"] as? String ?? "",
             line: intValue(obj["line"]),
             ms: intValue(obj["ms"]),
             msg: obj["msg"] as? String ?? ""
+        )
+    }
+
+    struct TreeRecord {
+        let id: String
+        let name: String
+        let file: String
+        let line: Int
+    }
+
+    // A [[LS_TREE]] line from the discovery pass: one per test, carrying the
+    // runtime id/name/file/line.
+    static func parseTree(_ line: String) -> TreeRecord? {
+        guard let obj = json(after: "[[LS_TREE]]", in: line),
+              let id = obj["id"] as? String else { return nil }
+        return TreeRecord(
+            id: id,
+            name: obj["name"] as? String ?? id,
+            file: obj["file"] as? String ?? "",
+            line: intValue(obj["line"])
         )
     }
 
@@ -93,8 +110,4 @@ enum WireParser {
         if let s = v as? String, let i = Int(s) { return i }
         return 0
     }
-
-    // The facade emits lowercase status strings matching TestStatus raw values,
-    // except none need remapping currently. Kept as a seam for safety.
-    private static func mapStatus(_ s: String) -> String { s }
 }

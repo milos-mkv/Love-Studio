@@ -10,6 +10,9 @@ extension Notification.Name {
     static let restartLanguageServer = Notification.Name("LoveStudio.restartLanguageServer")
     // Posted when diagnostic-severity overrides change; StudioView rewrites .luarc.json.
     static let diagnosticSeveritiesChanged = Notification.Name("LoveStudio.diagnosticSeveritiesChanged")
+    // Posted when a test run starts (userInfo["debug"]: Bool). The bottom panel
+    // switches to the Debug tab for a debug run, the Console tab otherwise.
+    static let testRunStarted = Notification.Name("LoveStudio.testRunStarted")
 }
 
 // MARK: - LuaEditorView (NSViewRepresentable)
@@ -1910,15 +1913,17 @@ final class LineNumberRulerView: NSRulerView {
             if text.character(at: index) == newline { lineNumber += 1 }
             index += 1
         }
-        if localX < bounds.maxX - rightPad - 12 {
-            if textView.isFoldable(lineNum: lineNumber, in: textView.string) {
-                textView.toggleFold(atLine: lineNumber)
-            }
-        } else {
-            // Right side of gutter → toggle breakpoint
-            if let bp = breakpoints, !currentFile.isEmpty {
-                bp.toggle(file: currentFile, line: lineNumber)
-            }
+        // The fold triangle lives in the far-left ~14px; clicking there on a foldable
+        // line folds. ANYWHERE else in the gutter toggles the breakpoint — including
+        // over the breakpoint dot (drawn at minX+4), so the dot you see is the dot you
+        // click to remove. (Previously the toggle zone was a thin right-edge strip far
+        // from the dot, so dots couldn't be added/removed by clicking them.)
+        let foldZone: CGFloat = 14
+        if localX < bounds.minX + foldZone,
+           textView.isFoldable(lineNum: lineNumber, in: textView.string) {
+            textView.toggleFold(atLine: lineNumber)
+        } else if let bp = breakpoints, !currentFile.isEmpty {
+            bp.toggle(file: currentFile, line: lineNumber)
         }
         needsDisplay = true
     }

@@ -1,12 +1,9 @@
 import Foundation
 import Observation
 
-// MARK: - CoverageStore
-//
-// Per-file, per-line coverage from the last run (§ coverage gutters). Populated
-// from `[[LS_COVLINES]]` lines; read by the editor's gutter to color lines
-// covered (green) / uncovered (red). Keyed by absolute file path.
-
+// Per-file, per-line coverage from the last run, keyed by absolute path. Populated
+// from [[LS_COVLINES]] lines and read by the editor gutter to color covered/uncovered
+// lines.
 @Observable
 final class CoverageStore {
     struct FileCoverage {
@@ -16,7 +13,7 @@ final class CoverageStore {
 
     private(set) var byFile: [String: FileCoverage] = [:]
 
-    /// True while there is coverage data to display (gates gutter rendering).
+    // True while there is coverage data to display (gates gutter rendering).
     var hasData: Bool { !byFile.isEmpty }
 
     func clear() { byFile = [:] }
@@ -25,7 +22,7 @@ final class CoverageStore {
         byFile[normalize(file)] = FileCoverage(hit: hit, miss: miss)
     }
 
-    /// Coverage for a file, looked up by absolute path (normalized).
+    // Coverage for a file, looked up by normalized absolute path.
     func coverage(forPath path: String) -> FileCoverage? {
         byFile[normalize(path)]
     }
