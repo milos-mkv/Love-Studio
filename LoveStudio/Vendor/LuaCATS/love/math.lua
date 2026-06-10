@@ -631,6 +631,7 @@ function Transform:setMatrix(
 	e4_3,
 	e4_4
 )
+	return self
 end
 
 ---
