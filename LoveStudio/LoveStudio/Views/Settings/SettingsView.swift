@@ -340,6 +340,19 @@ private struct RunnerSettingsView: View {
     @AppStorage("runnerDebugPort")         private var debugPort: Int = 8172
     @AppStorage("runnerShowExitCode")      private var showExitCode: Bool = true
 
+    // Test runner settings (§3.7)
+    @AppStorage("testRunnerEnabled")  private var testRunnerEnabled: Bool = true
+    @AppStorage("testRunnerTimeout")  private var testRunnerTimeout: Double = 30
+    @AppStorage("testRunnerCoverage") private var testRunnerCoverage: Bool = false
+    @AppStorage("testRunnerGutters")  private var testRunnerGutters: Bool = false
+    @AppStorage("testRunnerConsole")  private var testRunnerConsole: Bool = true
+    @AppStorage("testRunnerCoverageExcludes") private var coverageExcludesJSON: String = ""
+    @AppStorage("testRunnerFolders")  private var testRunnerFoldersJSON: String = ""
+
+    // Editable row lists, synced to the JSON strings above.
+    @State private var testRows: [TestFolderGlob] = []
+    @State private var excludeRows: [CoverageExcludeRow] = []
+
     var body: some View {
         Form {
             Section {
@@ -389,9 +402,150 @@ private struct RunnerSettingsView: View {
             } header: {
                 Label("Debugger", systemImage: "ant")
             }
+
+            Section {
+                Toggle("Enable Test Runner", isOn: $testRunnerEnabled)
+
+                if testRunnerEnabled {
+                    LabeledContent("Run timeout") {
+                        HStack {
+                            Slider(value: $testRunnerTimeout, in: 5...300, step: 5)
+                                .frame(width: 120)
+                            Text("\(Int(testRunnerTimeout)) s")
+                                .monospacedDigit()
+                                .frame(width: 44, alignment: .trailing)
+                        }
+                    }
+
+                    Toggle("Enable code coverage", isOn: $testRunnerCoverage)
+                    if testRunnerCoverage {
+                        Toggle("Show coverage in editor gutter", isOn: $testRunnerGutters)
+                            .padding(.leading, 16)
+
+                        // Exclude-from-coverage globs (folders or files), one per row.
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Exclude from coverage")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            ForEach($excludeRows) { $row in
+                                HStack(spacing: 8) {
+                                    TextField("e.g. vendor/**  or  main.lua", text: $row.glob)
+                                        .textFieldStyle(.roundedBorder)
+                                        .font(.system(size: 12, design: .monospaced))
+                                    Button {
+                                        excludeRows.removeAll { $0.id == row.id }
+                                        persistExcludes()
+                                    } label: { Image(systemName: "minus.circle.fill") }
+                                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                                    .help("Remove this exclude")
+                                }
+                            }
+                            Button {
+                                excludeRows.append(CoverageExcludeRow(glob: ""))
+                                persistExcludes()
+                            } label: {
+                                Label("Add exclude", systemImage: "plus.circle").font(.caption)
+                            }
+                            .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                        }
+                        .padding(.leading, 16)
+                        .onChange(of: excludeRows) { _, _ in persistExcludes() }
+                    }
+                    Toggle("Echo test results to console", isOn: $testRunnerConsole)
+
+                    // Editable folder + glob rows. One glob per row (§3.7). Each row
+                    // is two stacked labeled fields so the narrow Settings window
+                    // doesn't squeeze them.
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Test folders")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        ForEach($testRows) { $row in
+                            HStack(alignment: .center, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    LabeledField(caption: "Folder", placeholder: "tests",
+                                                 text: $row.folder)
+                                    LabeledField(caption: "Glob", placeholder: "**/*.test.lua",
+                                                 text: $row.glob)
+                                }
+                                Button {
+                                    testRows.removeAll { $0.id == row.id }
+                                    persistRows()
+                                } label: { Image(systemName: "minus.circle.fill") }
+                                .buttonStyle(.plain).foregroundStyle(.secondary)
+                                .help("Remove this folder")
+                            }
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.primary.opacity(0.04)))
+                        }
+                        Button {
+                            testRows.append(TestFolderGlob(folder: "tests", glob: "**/*.test.lua"))
+                            persistRows()
+                        } label: {
+                            Label("Add folder", systemImage: "plus.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    }
+                    .onChange(of: testRows) { _, _ in persistRows() }
+                }
+            } header: {
+                Label("Tests", systemImage: "flask")
+            }
         }
         .formStyle(.grouped)
         .padding(.bottom, 8)
+        .onAppear {
+            loadRows()
+            loadExcludes()
+        }
+    }
+
+    private func loadRows() {
+        let decoded = [TestFolderGlob].decode(from: testRunnerFoldersJSON)
+        testRows = decoded.isEmpty ? .defaultRows : decoded
+    }
+
+    private func persistRows() {
+        testRunnerFoldersJSON = testRows.encoded()
+    }
+
+    private func loadExcludes() {
+        // First run (no stored value yet) seeds the defaults; an explicit empty list
+        // ("[]") is respected as "exclude nothing".
+        if coverageExcludesJSON.isEmpty {
+            excludeRows = .defaultRows
+            persistExcludes()
+        } else {
+            excludeRows = [CoverageExcludeRow].decode(from: coverageExcludesJSON)
+        }
+    }
+
+    private func persistExcludes() {
+        coverageExcludesJSON = excludeRows.encoded()
+    }
+}
+
+// MARK: - LabeledField
+
+/// A small fixed-width caption + a flexible text field, used by the test-folder
+/// row editor so labels don't compete with the fields for horizontal space.
+private struct LabeledField: View {
+    let caption: String
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(caption)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(width: 46, alignment: .leading)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+        }
     }
 }
 

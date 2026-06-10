@@ -10,6 +10,9 @@ extension Notification.Name {
     static let restartLanguageServer = Notification.Name("LoveStudio.restartLanguageServer")
     // Posted when diagnostic-severity overrides change; StudioView rewrites .luarc.json.
     static let diagnosticSeveritiesChanged = Notification.Name("LoveStudio.diagnosticSeveritiesChanged")
+    // Posted when a test run starts (userInfo["debug"]: Bool). The bottom panel
+    // switches to the Debug tab for a debug run, the Console tab otherwise.
+    static let testRunStarted = Notification.Name("LoveStudio.testRunStarted")
 }
 
 // MARK: - LuaEditorView (NSViewRepresentable)
@@ -43,6 +46,8 @@ struct LuaEditorView: NSViewRepresentable {
     var breakpoints  : BreakpointManager? = nil
     var pausedLine   : Int? = nil
     var currentFile  : String = ""
+    var coverageHit  : Set<Int> = []     // covered lines (gutter green) — empty when off
+    var coverageMiss : Set<Int> = []     // uncovered lines (gutter red)
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
@@ -185,6 +190,8 @@ struct LuaEditorView: NSViewRepresentable {
         textView.pausedLine = pausedLine
         textView.lineNumberRuler?.breakpoints = breakpoints
         textView.lineNumberRuler?.currentFile = currentFile
+        textView.lineNumberRuler?.coverageHit = coverageHit
+        textView.lineNumberRuler?.coverageMiss = coverageMiss
 
         // LSP hover: give the text view the client + doc URL for mouse-rest hover.
         textView.lspClient = lspClient
@@ -1564,7 +1571,7 @@ final class LuaTextView: NSTextView {
         hoverWorkItem?.cancel()
         lastHoverCharIndex = NSNotFound
         hoverPendingCharIndex = NSNotFound
-        HoverPanel.shared.dismiss()
+        HoverPanel.shared.scheduleDismiss()
     }
 
     private func fireHover(at point: NSPoint) {
@@ -1608,7 +1615,7 @@ final class LuaTextView: NSTextView {
     private func presentCombinedHover(diagnostics diagBlock: String, docs: String?, screenRect: NSRect) {
         let hasDiag = !diagBlock.isEmpty
         let hasDocs = (docs?.isEmpty == false)
-        guard hasDiag || hasDocs else { HoverPanel.shared.dismiss(); return }
+        guard hasDiag || hasDocs else { HoverPanel.shared.scheduleDismiss(); return }
 
         var md = ""
         if hasDiag { md += diagBlock }
@@ -1849,6 +1856,8 @@ final class LineNumberRulerView: NSRulerView {
     // 1-based line number -> highest severity on that line (for the gutter dot).
     var diagnosticLines: [Int: LSPClientService.DiagnosticSeverity] = [:] { didSet { needsDisplay = true } }
     var currentFile: String = "" { didSet { needsDisplay = true } }
+    var coverageHit: Set<Int> = []  { didSet { needsDisplay = true } }  // gutter coverage stripes
+    var coverageMiss: Set<Int> = [] { didSet { needsDisplay = true } }
     var fontName: String = "" { didSet { needsDisplay = true } }
     var fontSize: CGFloat = 11 {
         didSet {
@@ -1904,15 +1913,17 @@ final class LineNumberRulerView: NSRulerView {
             if text.character(at: index) == newline { lineNumber += 1 }
             index += 1
         }
-        if localX < bounds.maxX - rightPad - 12 {
-            if textView.isFoldable(lineNum: lineNumber, in: textView.string) {
-                textView.toggleFold(atLine: lineNumber)
-            }
-        } else {
-            // Right side of gutter → toggle breakpoint
-            if let bp = breakpoints, !currentFile.isEmpty {
-                bp.toggle(file: currentFile, line: lineNumber)
-            }
+        // The fold triangle lives in the far-left ~14px; clicking there on a foldable
+        // line folds. ANYWHERE else in the gutter toggles the breakpoint — including
+        // over the breakpoint dot (drawn at minX+4), so the dot you see is the dot you
+        // click to remove. (Previously the toggle zone was a thin right-edge strip far
+        // from the dot, so dots couldn't be added/removed by clicking them.)
+        let foldZone: CGFloat = 14
+        if localX < bounds.minX + foldZone,
+           textView.isFoldable(lineNum: lineNumber, in: textView.string) {
+            textView.toggleFold(atLine: lineNumber)
+        } else if let bp = breakpoints, !currentFile.isEmpty {
+            bp.toggle(file: currentFile, line: lineNumber)
         }
         needsDisplay = true
     }
@@ -2020,6 +2031,16 @@ final class LineNumberRulerView: NSRulerView {
                             lineNumber: Int, luaTextView: LuaTextView? = nil) {
         let y = lineRect.minY + insetY - visibleRect.minY
         let midY = y + lineRect.height / 2
+
+        // Coverage stripe — thin bar on the far-left gutter edge (green=covered,
+        // red=uncovered). Only drawn when coverage data is present for this line.
+        if coverageHit.contains(lineNumber) {
+            NSColor.systemGreen.withAlphaComponent(0.55).setFill()
+            NSRect(x: bounds.minX, y: y, width: 3, height: lineRect.height).fill()
+        } else if coverageMiss.contains(lineNumber) {
+            NSColor.systemRed.withAlphaComponent(0.55).setFill()
+            NSRect(x: bounds.minX, y: y, width: 3, height: lineRect.height).fill()
+        }
 
         // Fold triangle - fixed on the left so it never overlaps line numbers
         if let tv = luaTextView, tv.isFoldable(lineNum: lineNumber, in: tv.string) {

@@ -1,5 +1,29 @@
 [
   {
+    "id": "testing-minimal",
+    "title": "Minimal Test File",
+    "category": "testing",
+    "description": "The smallest test file: a suite with a single empty test. Save under your tests folder (e.g. tests/mymodule.test.lua).",
+    "code": "-- Save under your tests folder, e.g. tests/mymodule.test.lua\n\n-- describe(name, fn): a named group of tests (a suite).\ndescribe(\"mymodule\", function()\n  -- it(name, fn): a single test case; put assertions in the body.\n  it(\"does the thing\", function()\n    assert.is_true(true)\n  end)\nend)\n",
+    "tags": ["test", "testing", "describe", "it", "minimal", "spec", "unit"]
+  },
+  {
+    "id": "testing-full",
+    "title": "Full Test File (with hooks)",
+    "category": "testing",
+    "description": "A complete test file showing all lifecycle hooks: setup/teardown (once per file) and before_each/after_each (around every test).",
+    "code": "-- Save under your tests folder, e.g. tests/mymodule.test.lua\n\n-- describe(name, fn): defines a test suite (a named group of tests). May nest.\ndescribe(\"mymodule\", function()\n  local mymodule\n\n  -- setup(fn): runs ONCE, before any test in this suite. Use for expensive\n  -- one-time preparation shared by every test (e.g. loading fixtures).\n  setup(function()\n  end)\n\n  -- teardown(fn): runs ONCE, after all tests in this suite have finished.\n  -- Use to release anything setup() created.\n  teardown(function()\n  end)\n\n  -- before_each(fn): runs before EVERY test. Use to build fresh state so one\n  -- test can never leak into the next.\n  before_each(function()\n    mymodule = require(\"game.mymodule\")\n  end)\n\n  -- after_each(fn): runs after EVERY test, even if it failed. Use for per-test\n  -- cleanup.\n  after_each(function()\n  end)\n\n  -- it(name, fn): defines one test case. Put assertions in the body.\n  it(\"does the thing\", function()\n    assert.are.equal(42, mymodule.answer())\n  end)\n\n  it(\"handles the edge case\", function()\n    assert.is_nil(mymodule.find(\"missing\"))\n  end)\nend)\n",
+    "tags": ["test", "testing", "setup", "teardown", "before_each", "after_each", "hooks", "spec", "unit"]
+  },
+  {
+    "id": "testing-love-double",
+    "title": "Test Using love.* Doubles",
+    "category": "testing",
+    "description": "A test that calls love.* APIs — the runner replaces them with safe doubles (auto-spies), so headless tests never open a window or crash.",
+    "code": "describe(\"rendering helper\", function()\n  it(\"can use love.graphics without a window\", function()\n    -- Inside a test, every love.* call is a DOUBLE: a stand-in that records the\n    -- call and returns a safe auto-spy instead of touching the real engine. So\n    -- tests run headless (no window) and these calls never crash, even though\n    -- no real graphics device exists.\n    love.graphics.setColor(1, 1, 1)\n    local img = love.graphics.newImage(\"sprite.png\")\n    assert.is_not_nil(img)\n  end)\nend)\n",
+    "tags": ["test", "testing", "love", "double", "mock", "spy", "headless"]
+  },
+  {
     "id": "window-set-mode",
     "title": "Set Window Mode",
     "category": "window",

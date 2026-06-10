@@ -48,6 +48,11 @@ final class TemplateService {
         if fm.fileExists(atPath: dstTop.path) { try fm.removeItem(at: dstTop) }
         try fm.copyItem(at: srcTop, to: dstTop)
 
+        // Definitions for the test-runner globals so the language server resolves
+        // them with autocomplete and signatures.
+        try testKitDefs.write(to: defsDir.appendingPathComponent("testkit.lua"),
+                              atomically: true, encoding: .utf8)
+
         try makeLuarc().write(to: url.appendingPathComponent(".luarc.json"), atomically: true, encoding: .utf8)
     }
 
@@ -63,6 +68,63 @@ final class TemplateService {
         let luarc = url.appendingPathComponent(".luarc.json")
         guard FileManager.default.fileExists(atPath: luarc.path) else { return }
         try? makeLuarc().write(to: luarc, atomically: true, encoding: .utf8)
+        // Keep the test-runner defs in sync alongside the rewritten config.
+        let defs = url.appendingPathComponent(Self.luaCATSSubdir).appendingPathComponent("testkit.lua")
+        if FileManager.default.fileExists(atPath: defs.deletingLastPathComponent().path) {
+            try? testKitDefs.write(to: defs, atomically: true, encoding: .utf8)
+        }
+    }
+
+    // LuaCATS definitions for the test-runner globals (describe/it/hooks/assert) so
+    // the language server resolves them with types and signatures.
+    private var testKitDefs: String {
+        """
+        ---@meta
+        -- [LÖVE Studio] Test runner globals (auto-generated). These are injected into
+        -- test files at run time by the test facade; this file lets the language
+        -- server recognize them with autocomplete + signatures.
+
+        ---Define a test suite (group of tests). May be nested.
+        ---@param name string
+        ---@param fn fun()
+        function describe(name, fn) end
+
+        ---Define a single test case.
+        ---@param name string
+        ---@param fn fun()
+        function it(name, fn) end
+
+        ---Run once before EACH test in the enclosing suite.
+        ---@param fn fun()
+        function before_each(fn) end
+
+        ---Run once after EACH test in the enclosing suite.
+        ---@param fn fun()
+        function after_each(fn) end
+
+        ---Run once before ALL tests in the file/suite (setup).
+        ---@param fn fun()
+        function setup(fn) end
+
+        ---Run once after ALL tests in the file/suite (teardown).
+        ---@param fn fun()
+        function teardown(fn) end
+
+        ---Assertion library (luassert). Callable, and exposes are/is_*/has/etc.
+        ---@class ls.assert
+        ---@field are table
+        ---@field is_true fun(v: any, msg?: string)
+        ---@field is_false fun(v: any, msg?: string)
+        ---@field is_nil fun(v: any, msg?: string)
+        ---@field is_not_nil fun(v: any, msg?: string)
+        ---@field equal fun(a: any, b: any, msg?: string)
+        ---@field same fun(a: any, b: any, msg?: string)
+        ---@field has_error fun(fn: fun(), msg?: string)
+        ---@field spy table
+        ---@field stub table
+        ---@overload fun(v: any, msg?: string)
+        assert = assert
+        """
     }
 
     private func makeLuarc() -> String {
@@ -78,7 +140,7 @@ final class TemplateService {
             "  \"Lua.workspace.library\": [\".love-studio/luacats\"]",
             "  \"Lua.runtime.version\": \"LuaJIT\"",
             "  \"Lua.runtime.special\": { \"love.filesystem.load\": \"loadfile\" }",
-            "  \"Lua.diagnostics.globals\": [\"love\"]",
+            "  \"Lua.diagnostics.globals\": [\"love\", \"describe\", \"it\", \"before_each\", \"after_each\", \"setup\", \"teardown\"]",
         ]
         if !severity.isEmpty {
             let pairs = severity.sorted { $0.key < $1.key }

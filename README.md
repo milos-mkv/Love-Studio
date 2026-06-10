@@ -85,6 +85,13 @@ The tilemap editor supports multi-layer tile-based level design. You can import 
 
 ---
 
+### Test Runner
+![Test Runner](images/test-runner.png)
+
+The test runner helps you catch bugs early and keep your game working as it grows. It is powered by well-known libraries such as LuaUnit, luassert, and LuaCov, and presents your suite in an intuitive Test Explorer that clearly shows which tests passed and which failed at a glance. You can debug any test with breakpoints, and built-in code coverage shows how much of your game is covered by tests.
+
+---
+
 ## Other Features
 
 ### Code Editor
@@ -202,6 +209,17 @@ Every visual tool generates clean, well-commented Lua modules that integrate dir
 
 ---
 
+## Type Annotations
+
+LÖVE Studio can power the editor with full Lua type information so you get accurate autocomplete, signatures, and inline diagnostics for both the LÖVE2D API and your own code.
+
+- Optional LuaCATS type annotations in generated modules (toggleable in editor settings)
+- Bundled LÖVE2D (love.\*) type definitions wired into each project
+- In-app language server providing completion, signature help, live diagnostics, and quick-fixes
+- Documentation on hover for any Lua symbol, with a static fallback when the server is off
+
+---
+
 ## Export Project
 
 LÖVE Studio includes a built-in export system that packages your finished game for sharing or distribution. Three export formats are supported:
@@ -210,6 +228,34 @@ LÖVE Studio includes a built-in export system that packages your finished game 
 - **macOS App Bundle** - Builds a standalone `.app` using the bundled `love.app` runtime. The result runs on macOS without requiring LÖVE2D to be installed separately.
 - **Android APK** - Packages the game as an Android APK with the game embedded. Requires a `love-android.apk` runtime template to be provided.
 
+
+---
+
+## Building from Source
+
+After cloning, run the setup script **once** before your first build, then build
+normally:
+
+```sh
+# 1. Fetch the bundled language server (downloads from GitHub, ~once)
+./LoveStudio/Scripts/setup-language-server.sh
+
+# 2. Build & run — either open the project in Xcode and press ⌘R…
+open LoveStudio/LoveStudio.xcodeproj
+
+#    …or build from the command line:
+xcodebuild -project LoveStudio/LoveStudio.xcodeproj -scheme LoveStudio build
+```
+
+The script fetches the bundled language server and is kept separate because it needs
+network access. If you skip it the app still builds and runs — you just fall back to
+basic autocomplete instead of the full language-server features.
+
+### Code signing
+
+Before building, set your own signing team: in Xcode, select the **LoveStudio**
+target → **Signing & Capabilities** → set **Team** to your Apple ID (a free Apple ID
+works for local builds).
 
 ---
 

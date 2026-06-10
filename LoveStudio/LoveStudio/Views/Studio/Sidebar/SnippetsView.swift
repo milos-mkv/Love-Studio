@@ -45,6 +45,8 @@ struct SnippetsView: View {
 
     @AppStorage("snippets.favorites") private var favoritesRaw: String = ""
     @AppStorage("snippets.recent")    private var recentRaw:    String = ""
+    // The "testing" snippets are only relevant when the Test Runner is enabled.
+    @AppStorage("testRunnerEnabled")  private var testRunnerEnabled: Bool = true
 
     @State private var searchText         = ""
     @State private var selectedCategory   = "all"
@@ -57,7 +59,8 @@ struct SnippetsView: View {
     private var recentIDs   : [String] { recentRaw.isEmpty    ? [] : recentRaw.components(separatedBy: ",") }
 
     private var categories: [String] {
-        ["favorites", "recent", "all"] + lib.categories
+        let cats = testRunnerEnabled ? lib.categories : lib.categories.filter { $0 != "testing" }
+        return ["favorites", "recent", "all"] + cats
     }
 
     private var filteredSnippets: [LoveSnippet] {
@@ -318,12 +321,18 @@ struct SnippetsView: View {
         }
     }
 
+    /// All snippets minus the "testing" category when the Test Runner is disabled.
+    private var availableSnippets: [LoveSnippet] {
+        testRunnerEnabled ? lib.snippets : lib.snippets.filter { $0.category != "testing" }
+    }
+
     private func snippets(for cat: String) -> [LoveSnippet] {
+        let all = availableSnippets
         switch cat {
-        case "favorites": return favoriteIDs.compactMap { id in lib.snippets.first { $0.id == id } }
-        case "recent":    return recentIDs.compactMap   { id in lib.snippets.first { $0.id == id } }
-        case "all":       return lib.snippets
-        default:          return lib.snippets.filter { $0.category == cat }
+        case "favorites": return favoriteIDs.compactMap { id in all.first { $0.id == id } }
+        case "recent":    return recentIDs.compactMap   { id in all.first { $0.id == id } }
+        case "all":       return all
+        default:          return all.filter { $0.category == cat }
         }
     }
 
