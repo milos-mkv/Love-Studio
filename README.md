@@ -209,6 +209,17 @@ Every visual tool generates clean, well-commented Lua modules that integrate dir
 
 ---
 
+## Type Annotations
+
+LÖVE Studio can power the editor with full Lua type information so you get accurate autocomplete, signatures, and inline diagnostics for both the LÖVE2D API and your own code.
+
+- Optional LuaCATS type annotations in generated modules (toggleable in editor settings)
+- Bundled LÖVE2D (love.\*) type definitions wired into each project
+- In-app language server providing completion, signature help, live diagnostics, and quick-fixes
+- Documentation on hover for any Lua symbol, with a static fallback when the server is off
+
+---
+
 ## Export Project
 
 LÖVE Studio includes a built-in export system that packages your finished game for sharing or distribution. Three export formats are supported:
