@@ -1,12 +1,32 @@
 import AppKit
 
+// Reports mouse enter/exit so the panel can stay up while the pointer is over it.
+private final class HoverEffectView: NSVisualEffectView {
+    var onMouseEntered: (() -> Void)?
+    var onMouseExited: (() -> Void)?
+    private var trackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { onMouseEntered?() }
+    override func mouseExited(with event: NSEvent) { onMouseExited?() }
+}
+
 // Borderless popover that renders multi-line markdown for symbol hover.
 final class HoverPanel: NSObject {
 
     static let shared = HoverPanel()
 
     private let panel: NSPanel
-    private let effectView: NSVisualEffectView
+    private let effectView: HoverEffectView
     private let textView: NSTextView
     private let scrollView: NSScrollView
 
@@ -14,6 +34,10 @@ final class HoverPanel: NSObject {
     private let maxWidth: CGFloat = 480
     private let maxHeight: CGFloat = 320
     private let panelOffset: CGFloat = 6
+
+    private let dismissDelay: TimeInterval = 0.25
+    private var dismissWorkItem: DispatchWorkItem?
+    private var mouseInsidePanel = false
 
     private override init() {
         panel = NSPanel(contentRect: .zero,
@@ -25,7 +49,7 @@ final class HoverPanel: NSObject {
         panel.hasShadow          = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        effectView = NSVisualEffectView()
+        effectView = HoverEffectView()
         effectView.material         = .menu
         effectView.blendingMode     = .behindWindow
         effectView.state            = .active
@@ -58,6 +82,22 @@ final class HoverPanel: NSObject {
 
         super.init()
 
+        effectView.onMouseEntered = { [weak self] in
+            self?.mouseInsidePanel = true
+            self?.cancelPendingDismiss()
+        }
+        effectView.onMouseExited = { [weak self] in
+            self?.mouseInsidePanel = false
+            self?.dismiss()
+        }
+
+        // Hide when the app loses focus (the panel floats above all apps).
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.dismiss()
+        }
+
         let border = CALayer()
         border.borderColor  = NSColor.separatorColor.cgColor
         border.borderWidth  = 0.5
@@ -81,6 +121,7 @@ final class HoverPanel: NSObject {
 
     // No-op for empty content so we never flash an empty box.
     func show(markdown: String, anchorScreenRect: NSRect) {
+        cancelPendingDismiss()
         let attributed = Self.render(markdown)
         guard attributed.length > 0 else { dismiss(); return }
         textView.textStorage?.setAttributedString(attributed)
@@ -113,7 +154,25 @@ final class HoverPanel: NSObject {
     }
 
     func dismiss() {
+        cancelPendingDismiss()
+        mouseInsidePanel = false
         panel.orderOut(nil)
+    }
+
+    // Dismiss after a short delay unless the pointer reaches the panel first.
+    func scheduleDismiss() {
+        cancelPendingDismiss()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.mouseInsidePanel else { return }
+            self.panel.orderOut(nil)
+        }
+        dismissWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + dismissDelay, execute: work)
+    }
+
+    private func cancelPendingDismiss() {
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
     }
 
     // Fenced code blocks render monospace; prose renders as inline markdown.

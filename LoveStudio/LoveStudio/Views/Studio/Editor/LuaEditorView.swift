@@ -1571,7 +1571,7 @@ final class LuaTextView: NSTextView {
         hoverWorkItem?.cancel()
         lastHoverCharIndex = NSNotFound
         hoverPendingCharIndex = NSNotFound
-        HoverPanel.shared.dismiss()
+        HoverPanel.shared.scheduleDismiss()
     }
 
     private func fireHover(at point: NSPoint) {
@@ -1615,7 +1615,7 @@ final class LuaTextView: NSTextView {
     private func presentCombinedHover(diagnostics diagBlock: String, docs: String?, screenRect: NSRect) {
         let hasDiag = !diagBlock.isEmpty
         let hasDocs = (docs?.isEmpty == false)
-        guard hasDiag || hasDocs else { HoverPanel.shared.dismiss(); return }
+        guard hasDiag || hasDocs else { HoverPanel.shared.scheduleDismiss(); return }
 
         var md = ""
         if hasDiag { md += diagBlock }
