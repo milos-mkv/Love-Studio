@@ -1013,170 +1013,184 @@ struct AnimationManagerView: View {
     }
 
     private func frameEditorRow(frameIdx: Int, clip: SpriteAnimationClip) -> some View {
-        let defaultMs = Int(1000.0 / max(1, clip.fps))
-        let hasCustomDur = config.clips[safeClipIndex].frames[frameIdx].duration != nil
-        let hasRepeat    = config.clips[safeClipIndex].frames[frameIdx].repeatCount > 1
-
-        return VStack(alignment: .leading, spacing: 0) {
-            // Header row
-            HStack(spacing: 6) {
-                HStack(spacing: 5) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(AE.accent)
-                        .frame(width: 3, height: 12)
-                    Text("Frame \(frameIdx + 1)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(AE.txt1)
-                }
-                Spacer()
-                Button { selectedFrameID = nil } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9))
-                        .foregroundStyle(AE.txt3)
-                        .frame(width: 18, height: 18)
-                        .background(AE.field)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-
+        VStack(alignment: .leading, spacing: 0) {
+            frameEditorHeader(frameIdx: frameIdx)
             Divider().overlay(AE.border)
-
-            // Duration row
-            HStack(spacing: 0) {
-                // Label column
-                HStack(spacing: 5) {
-                    Image(systemName: "timer")
-                        .font(.system(size: 10))
-                        .foregroundStyle(AE.txt3)
-                    Text("Duration")
-                        .font(.system(size: 11))
-                        .foregroundStyle(AE.txt2)
-                }
-                .frame(width: 80, alignment: .leading)
-                .padding(.leading, 10)
-
-                Spacer()
-
-                if hasCustomDur {
-                    HStack(spacing: 6) {
-                        TextField("ms", value: Binding(
-                            get: {
-                                guard safeClipIndex < config.clips.count,
-                                      frameIdx < config.clips[safeClipIndex].frames.count else { return defaultMs }
-                                return Int((config.clips[safeClipIndex].frames[frameIdx].duration ?? Double(defaultMs)/1000) * 1000)
-                            },
-                            set: {
-                                guard safeClipIndex < config.clips.count,
-                                      frameIdx < config.clips[safeClipIndex].frames.count else { return }
-                                config.clips[safeClipIndex].frames[frameIdx].duration = max(1, Double($0)) / 1000.0
-                            }
-                        ), format: .number)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(AE.accent)
-                        .frame(width: 52)
-                        .multilineTextAlignment(.center)
-                        .aeField()
-
-                        Text("ms")
-                            .font(.system(size: 11))
-                            .foregroundStyle(AE.txt3)
-
-                        Button {
-                            guard safeClipIndex < config.clips.count,
-                                  frameIdx < config.clips[safeClipIndex].frames.count else { return }
-                            config.clips[safeClipIndex].frames[frameIdx].duration = nil
-                        } label: {
-                            Label("Reset", systemImage: "arrow.counterclockwise")
-                                .font(.system(size: 10))
-                                .foregroundStyle(AE.txt3)
-                                .labelStyle(.iconOnly)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Reset to clip default")
-                    }
-                    .padding(.trailing, 10)
-                } else {
-                    HStack(spacing: 8) {
-                        Text("\(defaultMs) ms")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(AE.txt3)
-
-                        Button("Override") {
-                            guard safeClipIndex < config.clips.count,
-                                  frameIdx < config.clips[safeClipIndex].frames.count else { return }
-                            config.clips[safeClipIndex].frames[frameIdx].duration = Double(defaultMs) / 1000.0
-                        }
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(AE.accent)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(AE.accentSoft)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.trailing, 10)
-                }
-            }
-            .padding(.vertical, 8)
-
+            frameDurationRow(frameIdx: frameIdx, clip: clip)
             Divider().overlay(AE.border)
-
-            // Repeat row
-            HStack(spacing: 0) {
-                HStack(spacing: 5) {
-                    Image(systemName: "repeat")
-                        .font(.system(size: 10))
-                        .foregroundStyle(AE.txt3)
-                    Text("Repeat")
-                        .font(.system(size: 11))
-                        .foregroundStyle(AE.txt2)
-                }
-                .frame(width: 80, alignment: .leading)
-                .padding(.leading, 10)
-
-                Spacer()
-
-                HStack(spacing: 8) {
-                    Text("\(config.clips[safeClipIndex].frames[frameIdx].repeatCount)×")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(hasRepeat ? AE.accent : AE.txt2)
-                        .frame(width: 28, alignment: .trailing)
-
-                    Stepper("", value: Binding(
-                        get: {
-                            guard safeClipIndex < config.clips.count,
-                                  frameIdx < config.clips[safeClipIndex].frames.count else { return 1 }
-                            return config.clips[safeClipIndex].frames[frameIdx].repeatCount
-                        },
-                        set: {
-                            guard safeClipIndex < config.clips.count,
-                                  frameIdx < config.clips[safeClipIndex].frames.count else { return }
-                            config.clips[safeClipIndex].frames[frameIdx].repeatCount = max(1, $0)
-                        }
-                    ), in: 1...99)
-                    .labelsHidden()
-
-                    if hasRepeat {
-                        Text("= \(Int(Double(config.clips[safeClipIndex].frames[frameIdx].repeatCount) * (config.clips[safeClipIndex].frames[frameIdx].duration ?? Double(defaultMs)/1000) * 1000))ms total")
-                            .font(.system(size: 10))
-                            .foregroundStyle(AE.txt3)
-                    }
-                }
-                .padding(.trailing, 10)
-            }
-            .padding(.vertical, 8)
-
+            frameRepeatRow(frameIdx: frameIdx, clip: clip)
             Divider().overlay(AE.border)
-
-            // Hitbox section
             hitboxSection(frameIdx: frameIdx)
         }
         .background(AE.field.opacity(0.4))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(AE.accent.opacity(0.25), lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private func frameEditorHeader(frameIdx: Int) -> some View {
+        // Header row
+        HStack(spacing: 6) {
+            HStack(spacing: 5) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(AE.accent)
+                    .frame(width: 3, height: 12)
+                Text("Frame \(frameIdx + 1)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AE.txt1)
+            }
+            Spacer()
+            Button { selectedFrameID = nil } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9))
+                    .foregroundStyle(AE.txt3)
+                    .frame(width: 18, height: 18)
+                    .background(AE.field)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func frameDurationRow(frameIdx: Int, clip: SpriteAnimationClip) -> some View {
+        let defaultMs = Int(1000.0 / max(1, clip.fps))
+        let hasCustomDur = config.clips[safeClipIndex].frames[frameIdx].duration != nil
+
+        // Duration row
+        HStack(spacing: 0) {
+            // Label column
+            HStack(spacing: 5) {
+                Image(systemName: "timer")
+                    .font(.system(size: 10))
+                    .foregroundStyle(AE.txt3)
+                Text("Duration")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AE.txt2)
+            }
+            .frame(width: 80, alignment: .leading)
+            .padding(.leading, 10)
+
+            Spacer()
+
+            if hasCustomDur {
+                HStack(spacing: 6) {
+                    TextField("ms", value: Binding(
+                        get: {
+                            guard safeClipIndex < config.clips.count,
+                                  frameIdx < config.clips[safeClipIndex].frames.count else { return defaultMs }
+                            return Int((config.clips[safeClipIndex].frames[frameIdx].duration ?? Double(defaultMs)/1000) * 1000)
+                        },
+                        set: {
+                            guard safeClipIndex < config.clips.count,
+                                  frameIdx < config.clips[safeClipIndex].frames.count else { return }
+                            config.clips[safeClipIndex].frames[frameIdx].duration = max(1, Double($0)) / 1000.0
+                        }
+                    ), format: .number)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(AE.accent)
+                    .frame(width: 52)
+                    .multilineTextAlignment(.center)
+                    .aeField()
+
+                    Text("ms")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AE.txt3)
+
+                    Button {
+                        guard safeClipIndex < config.clips.count,
+                              frameIdx < config.clips[safeClipIndex].frames.count else { return }
+                        config.clips[safeClipIndex].frames[frameIdx].duration = nil
+                    } label: {
+                        Label("Reset", systemImage: "arrow.counterclockwise")
+                            .font(.system(size: 10))
+                            .foregroundStyle(AE.txt3)
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reset to clip default")
+                }
+                .padding(.trailing, 10)
+            } else {
+                HStack(spacing: 8) {
+                    Text("\(defaultMs) ms")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(AE.txt3)
+
+                    Button("Override") {
+                        guard safeClipIndex < config.clips.count,
+                              frameIdx < config.clips[safeClipIndex].frames.count else { return }
+                        config.clips[safeClipIndex].frames[frameIdx].duration = Double(defaultMs) / 1000.0
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AE.accent)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(AE.accentSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .buttonStyle(.plain)
+                }
+                .padding(.trailing, 10)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func frameRepeatRow(frameIdx: Int, clip: SpriteAnimationClip) -> some View {
+        let defaultMs = Int(1000.0 / max(1, clip.fps))
+        let hasRepeat = config.clips[safeClipIndex].frames[frameIdx].repeatCount > 1
+
+        // Repeat row
+        HStack(spacing: 0) {
+            HStack(spacing: 5) {
+                Image(systemName: "repeat")
+                    .font(.system(size: 10))
+                    .foregroundStyle(AE.txt3)
+                Text("Repeat")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AE.txt2)
+            }
+            .frame(width: 80, alignment: .leading)
+            .padding(.leading, 10)
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                Text("\(config.clips[safeClipIndex].frames[frameIdx].repeatCount)×")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(hasRepeat ? AE.accent : AE.txt2)
+                    .frame(width: 28, alignment: .trailing)
+
+                Stepper("", value: Binding(
+                    get: {
+                        guard safeClipIndex < config.clips.count,
+                              frameIdx < config.clips[safeClipIndex].frames.count else { return 1 }
+                        return config.clips[safeClipIndex].frames[frameIdx].repeatCount
+                    },
+                    set: {
+                        guard safeClipIndex < config.clips.count,
+                              frameIdx < config.clips[safeClipIndex].frames.count else { return }
+                        config.clips[safeClipIndex].frames[frameIdx].repeatCount = max(1, $0)
+                    }
+                ), in: 1...99)
+                .labelsHidden()
+
+                if hasRepeat {
+                    let frame = config.clips[safeClipIndex].frames[frameIdx]
+                    let durationSec: Double = frame.duration ?? Double(defaultMs) / 1000
+                    let totalSec: Double = Double(frame.repeatCount) * durationSec
+                    let totalMs = Int(totalSec * 1000)
+                    Text("= \(totalMs)ms total")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AE.txt3)
+                }
+            }
+            .padding(.trailing, 10)
+        }
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder

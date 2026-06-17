@@ -626,21 +626,21 @@ private struct GitTreeStatusBadge: View {
     let isSelected: Bool
 
     var body: some View {
+        let fg: Color = isSelected ? Color.white.opacity(0.92) : indicator.color
+        let fill: Color = isSelected ? Color.white.opacity(0.16) : indicator.color.opacity(0.14)
+        let stroke: Color = isSelected ? Color.white.opacity(0.24) : indicator.color.opacity(0.28)
         Text(indicator.text)
             .font(.system(size: 8, weight: .bold, design: .monospaced))
-            .foregroundStyle(isSelected ? Color.white.opacity(0.92) : indicator.color)
+            .foregroundStyle(fg)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(
                 Capsule()
-                    .fill(isSelected ? Color.white.opacity(0.16) : indicator.color.opacity(0.14))
+                    .fill(fill)
             )
             .overlay(
                 Capsule()
-                    .strokeBorder(
-                        isSelected ? Color.white.opacity(0.24) : indicator.color.opacity(0.28),
-                        lineWidth: 0.5
-                    )
+                    .strokeBorder(stroke, lineWidth: 0.5)
             )
     }
 }

@@ -839,10 +839,7 @@ private final class AssetThumbnailLoader: ObservableObject {
         guard !hasLoaded else { return }
         hasLoaded = true
         if let cached = assetPreviewCache.cachedImage(for: url) { image = cached; return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let loaded = assetPreviewCache.image(for: self.url)
-            DispatchQueue.main.async { self.image = loaded }
-        }
+        image = assetPreviewCache.image(for: url)
     }
 }
 

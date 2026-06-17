@@ -792,113 +792,7 @@ struct TilemapEditorView: View {
     @ViewBuilder private var layersView: some View {
         VStack(spacing: 4) {
             ForEach(Array(config.layers.enumerated()), id: \.element.id) { idx, layer in
-                VStack(spacing: 5) {
-                    HStack(spacing: 6) {
-                        Button {
-                            let mods = NSEvent.modifierFlags
-                            if mods.contains(.option) {
-                                // Solo: if already soloing this layer, restore all; otherwise solo it
-                                if soloLayerIndex == idx {
-                                    soloLayerIndex = nil
-                                } else {
-                                    soloLayerIndex = idx
-                                }
-                            } else {
-                                if soloLayerIndex != nil { soloLayerIndex = nil }
-                                config.layers[idx].visible.toggle()
-                            }
-                        } label: {
-                            let isSolo = soloLayerIndex == idx
-                            Image(systemName: isSolo ? "eye.circle.fill" : (layer.visible ? "eye.fill" : "eye.slash"))
-                                .font(.system(size: 10))
-                                .foregroundStyle(isSolo ? P.accent : (layer.visible ? Color.secondary : Color(nsColor: .tertiaryLabelColor)))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Toggle visibility · ⌥ click to solo")
-
-                        Button {
-                            config.layers[idx].isCollision.toggle(); regenerate()
-                        } label: {
-                            Image(systemName: layer.isCollision ? "shield.fill" : "shield")
-                                .font(.system(size: 10))
-                                .foregroundStyle(layer.isCollision ? Color.red : Color(nsColor: .tertiaryLabelColor))
-                        }
-                        .buttonStyle(.plain).help("Toggle collision")
-
-                        Button {
-                            config.layers[idx].isForeground.toggle(); regenerate()
-                        } label: {
-                            Image(systemName: layer.isForeground ? "square.2.layers.3d.top.filled" : "square.2.layers.3d")
-                                .font(.system(size: 10))
-                                .foregroundStyle(layer.isForeground ? Color.blue : Color(nsColor: .tertiaryLabelColor))
-                        }
-                        .buttonStyle(.plain).help("Foreground - draws above player")
-
-                        Button {
-                            config.layers[idx].isLocked.toggle()
-                        } label: {
-                            Image(systemName: config.layers[idx].isLocked ? "lock.fill" : "lock.open")
-                                .font(.system(size: 10))
-                                .foregroundStyle(config.layers[idx].isLocked ? Color.orange : Color(nsColor: .tertiaryLabelColor))
-                        }
-                        .buttonStyle(.plain).help("Lock layer - prevents accidental edits")
-
-                        TextField("Layer name", text: $config.layers[idx].name)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11, weight: activeLayer == idx ? .semibold : .regular))
-                            .foregroundStyle(activeLayer == idx ? Color.primary : Color.secondary)
-                            .onSubmit { regenerate() }
-
-                        if config.layers[idx].isLocked {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 8))
-                                .foregroundStyle(Color.orange.opacity(0.7))
-                        }
-
-                        Spacer()
-
-                        HStack(spacing: 0) {
-                            Button { moveLayer(idx, by: -1) } label: {
-                                Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
-                                    .frame(width: 18, height: 18)
-                            }
-                            .buttonStyle(.plain).disabled(idx == 0)
-                            Button { moveLayer(idx, by: 1) } label: {
-                                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
-                                    .frame(width: 18, height: 18)
-                            }
-                            .buttonStyle(.plain).disabled(idx == config.layers.count - 1)
-                        }
-                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
-                    }
-
-                    HStack(spacing: 6) {
-                        Slider(value: $config.layers[idx].opacity, in: 0...1).controlSize(.mini)
-                        Text("\(Int(layer.opacity * 100))%")
-                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
-                            .frame(width: 28, alignment: .trailing)
-                    }
-                }
-                .padding(.vertical, 6).padding(.horizontal, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 6).fill(
-                        layer.isCollision
-                            ? Color.red.opacity(activeLayer == idx ? 0.14 : 0.06)
-                            : layer.isForeground
-                                ? Color.blue.opacity(activeLayer == idx ? 0.12 : 0.05)
-                                : (activeLayer == idx ? P.accentBg : P.card)
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(
-                            layer.isCollision ? Color.red.opacity(0.4) :
-                            layer.isForeground ? Color.blue.opacity(0.35) :
-                            activeLayer == idx ? P.accent.opacity(0.3) : P.border.opacity(0.9),
-                            lineWidth: 0.5)
-                )
-                .contentShape(Rectangle())
-                .onTapGesture { activeLayer = idx }
+                layerRow(idx: idx, layer: layer)
             }
 
             HStack(spacing: 6) {
@@ -949,6 +843,126 @@ struct TilemapEditorView: View {
                 }
             }
             .padding(.top, 2)
+        }
+    }
+
+    @ViewBuilder private func layerRow(idx: Int, layer: TileLayer) -> some View {
+        VStack(spacing: 5) {
+            HStack(spacing: 6) {
+                Button {
+                    let mods = NSEvent.modifierFlags
+                    if mods.contains(.option) {
+                        // Solo: if already soloing this layer, restore all; otherwise solo it
+                        if soloLayerIndex == idx {
+                            soloLayerIndex = nil
+                        } else {
+                            soloLayerIndex = idx
+                        }
+                    } else {
+                        if soloLayerIndex != nil { soloLayerIndex = nil }
+                        config.layers[idx].visible.toggle()
+                    }
+                } label: {
+                    let isSolo = soloLayerIndex == idx
+                    Image(systemName: isSolo ? "eye.circle.fill" : (layer.visible ? "eye.fill" : "eye.slash"))
+                        .font(.system(size: 10))
+                        .foregroundStyle(isSolo ? P.accent : (layer.visible ? Color.secondary : Color(nsColor: .tertiaryLabelColor)))
+                }
+                .buttonStyle(.plain)
+                .help("Toggle visibility · ⌥ click to solo")
+
+                Button {
+                    config.layers[idx].isCollision.toggle(); regenerate()
+                } label: {
+                    Image(systemName: layer.isCollision ? "shield.fill" : "shield")
+                        .font(.system(size: 10))
+                        .foregroundStyle(layer.isCollision ? Color.red : Color(nsColor: .tertiaryLabelColor))
+                }
+                .buttonStyle(.plain).help("Toggle collision")
+
+                Button {
+                    config.layers[idx].isForeground.toggle(); regenerate()
+                } label: {
+                    Image(systemName: layer.isForeground ? "square.2.layers.3d.top.filled" : "square.2.layers.3d")
+                        .font(.system(size: 10))
+                        .foregroundStyle(layer.isForeground ? Color.blue : Color(nsColor: .tertiaryLabelColor))
+                }
+                .buttonStyle(.plain).help("Foreground - draws above player")
+
+                Button {
+                    config.layers[idx].isLocked.toggle()
+                } label: {
+                    Image(systemName: config.layers[idx].isLocked ? "lock.fill" : "lock.open")
+                        .font(.system(size: 10))
+                        .foregroundStyle(config.layers[idx].isLocked ? Color.orange : Color(nsColor: .tertiaryLabelColor))
+                }
+                .buttonStyle(.plain).help("Lock layer - prevents accidental edits")
+
+                TextField("Layer name", text: $config.layers[idx].name)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11, weight: activeLayer == idx ? .semibold : .regular))
+                    .foregroundStyle(activeLayer == idx ? Color.primary : Color.secondary)
+                    .onSubmit { regenerate() }
+
+                if config.layers[idx].isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Color.orange.opacity(0.7))
+                }
+
+                Spacer()
+
+                HStack(spacing: 0) {
+                    Button { moveLayer(idx, by: -1) } label: {
+                        Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
+                            .frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.plain).disabled(idx == 0)
+                    Button { moveLayer(idx, by: 1) } label: {
+                        Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+                            .frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.plain).disabled(idx == config.layers.count - 1)
+                }
+                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+            }
+
+            HStack(spacing: 6) {
+                Slider(value: $config.layers[idx].opacity, in: 0...1).controlSize(.mini)
+                Text("\(Int(layer.opacity * 100))%")
+                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
+                    .frame(width: 28, alignment: .trailing)
+            }
+        }
+        .padding(.vertical, 6).padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6).fill(layerRowFill(idx: idx, layer: layer))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(layerRowBorder(idx: idx, layer: layer), lineWidth: 0.5)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { activeLayer = idx }
+    }
+
+    private func layerRowFill(idx: Int, layer: TileLayer) -> Color {
+        if layer.isCollision {
+            return Color.red.opacity(activeLayer == idx ? 0.14 : 0.06)
+        } else if layer.isForeground {
+            return Color.blue.opacity(activeLayer == idx ? 0.12 : 0.05)
+        } else {
+            return activeLayer == idx ? P.accentBg : P.card
+        }
+    }
+
+    private func layerRowBorder(idx: Int, layer: TileLayer) -> Color {
+        if layer.isCollision {
+            return Color.red.opacity(0.4)
+        } else if layer.isForeground {
+            return Color.blue.opacity(0.35)
+        } else {
+            return activeLayer == idx ? P.accent.opacity(0.3) : P.border.opacity(0.9)
         }
     }
 

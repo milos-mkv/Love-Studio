@@ -21,7 +21,6 @@ struct ParticleCodeGenerator {
         // Canvas size for the procedural soft circle.
         // 64×64 gives enough resolution so particles stay smooth at any scale.
         let canvasSize = 64
-        let canvasHalf = canvasSize / 2
 
         let hasCustomTexture = config.textureName != nil && !config.textureName!.isEmpty
         let sizeStartPx = Int(config.sizeStart)

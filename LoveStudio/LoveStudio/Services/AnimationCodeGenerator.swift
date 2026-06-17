@@ -27,7 +27,6 @@ struct AnimationCodeGenerator {
         let frameHeight = max(1, config.frameHeight)
         let originX = config.centerOrigin ? "self.frameWidth / 2" : fmt2(config.offsetX)
         let originY = config.centerOrigin ? "self.frameHeight / 2" : fmt2(config.offsetY)
-        let hasEvents = config.clips.contains { !$0.events.isEmpty }
         let animationTable = buildAnimationsTable(config)
 
         return """

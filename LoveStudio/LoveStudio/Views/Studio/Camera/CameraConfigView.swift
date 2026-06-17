@@ -358,7 +358,7 @@ struct CameraConfigView: View {
         }, with: .color(.cyan), lineWidth: 1.5)
 
         // Labels
-        var tgt = ctx
+        let tgt = ctx
         tgt.draw(
             Text("target").font(.system(size: 9)).foregroundStyle(Color.orange),
             at: CGPoint(x: targetX + 8, y: targetY - 4)

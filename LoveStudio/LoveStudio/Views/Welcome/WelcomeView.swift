@@ -213,7 +213,7 @@ final class PixelBgNSView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let W = bounds.width, H = bounds.height
+        let H = bounds.height
         let dark = isDark
 
         // In light mode boost alpha so elements are visible on light background

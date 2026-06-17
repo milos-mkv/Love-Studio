@@ -333,12 +333,6 @@ final class LoveRunner {
         //    We embed the original source as a loaded chunk so:
         //      - No file rename/backup is needed
         //      - Debugger sees correct '@main.lua' chunk name → line numbers are exact
-        let escaped = originalSrc
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\r")
-
         // Use a sentinel file instead of embedding the source, to avoid size limits and
         // escaping edge cases. We write the original main to a hidden backup, then load it.
         let backupMain = projectURL.appendingPathComponent("__ls_main_bak.lua")

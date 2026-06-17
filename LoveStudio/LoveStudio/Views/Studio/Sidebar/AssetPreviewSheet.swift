@@ -91,9 +91,7 @@ private struct ImagePreviewContent: View {
             .padding(.vertical, 4)
         }
         .task {
-            image = await Task.detached(priority: .userInitiated) {
-                NSImage(contentsOf: item.url)
-            }.value
+            image = NSImage(contentsOf: item.url)
         }
     }
 }
