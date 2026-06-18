@@ -715,15 +715,8 @@ struct SpritesheetPackerView: View {
 
     private func repack() {
         isRepacking = true
-        let cfg = config
-        let url = projectURL
-        Task.detached(priority: .userInitiated) {
-            let result = SpritesheetPacker.pack(config: cfg, projectURL: url)
-            await MainActor.run {
-                packResult   = result
-                isRepacking  = false
-            }
-        }
+        packResult  = SpritesheetPacker.pack(config: config, projectURL: projectURL)
+        isRepacking = false
     }
 
     // MARK: - Tileset merge
@@ -731,21 +724,11 @@ struct SpritesheetPackerView: View {
     private func runMerge() {
         guard !config.sprites.isEmpty else { mergeResult = nil; return }
         isMerging = true
-        let sprites   = config.sprites
-        let tileSize  = mergeTileSize
-        let maxWidth  = mergeMaxWidth
-        let pow2      = mergePowerOfTwo
-        let url       = projectURL
-        Task.detached(priority: .userInitiated) {
-            let result = TilesetMerger.merge(
-                sprites: sprites, tileSize: tileSize,
-                maxAtlasWidth: maxWidth,
-                powerOfTwo: pow2, projectURL: url)
-            await MainActor.run {
-                mergeResult = result
-                isMerging   = false
-            }
-        }
+        mergeResult = TilesetMerger.merge(
+            sprites: config.sprites, tileSize: mergeTileSize,
+            maxAtlasWidth: mergeMaxWidth,
+            powerOfTwo: mergePowerOfTwo, projectURL: projectURL)
+        isMerging = false
     }
 
     private func exportMerge() {

@@ -113,7 +113,7 @@ enum GitRepositoryOperation {
     }
 }
 
-private struct GitUpstreamStatus {
+fileprivate struct GitUpstreamStatus {
     let upstreamBranch: String
     let aheadCount: Int
     let behindCount: Int
@@ -191,14 +191,14 @@ final class GitStatusService {
         guard let root = projectRoot else { return }
         let hasGit = FileManager.default.fileExists(atPath: root.appendingPathComponent(".git").path)
         Task {
-            async let s  = Task.detached(priority: .utility) { hasGit ? Self.runGitStatus(in: root)   : [:] }.value
-            async let c  = Task.detached(priority: .utility) { hasGit ? Self.runGitLog(in: root)      : [] }.value
-            async let br = Task.detached(priority: .utility) { hasGit ? Self.runGitBranches(in: root) : ([] as [GitBranch], "") }.value
-            async let rm = Task.detached(priority: .utility) { hasGit ? Self.runGitRemotes(in: root)  : [] }.value
-            async let tg = Task.detached(priority: .utility) { hasGit ? Self.runGitTags(in: root)     : [] }.value
-            async let st = Task.detached(priority: .utility) { hasGit ? Self.runGitStashes(in: root)  : [] }.value
-            async let op = Task.detached(priority: .utility) { hasGit ? Self.runGitOperationState(in: root) : nil }.value
-            async let up = Task.detached(priority: .utility) { hasGit ? Self.runGitUpstreamStatus(in: root) : .empty }.value
+            async let s  = Task.detached(priority: .utility) { hasGit ? GitCommands.runGitStatus(in: root)   : [:] }.value
+            async let c  = Task.detached(priority: .utility) { hasGit ? GitCommands.runGitLog(in: root)      : [] }.value
+            async let br = Task.detached(priority: .utility) { hasGit ? GitCommands.runGitBranches(in: root) : ([] as [GitBranch], "") }.value
+            async let rm = Task.detached(priority: .utility) { hasGit ? GitCommands.runGitRemotes(in: root)  : [] }.value
+            async let tg = Task.detached(priority: .utility) { hasGit ? GitCommands.runGitTags(in: root)     : [] }.value
+            async let st = Task.detached(priority: .utility) { hasGit ? GitCommands.runGitStashes(in: root)  : [] }.value
+            async let op = Task.detached(priority: .utility) { hasGit ? GitCommands.runGitOperationState(in: root) : nil }.value
+            async let up = Task.detached(priority: .utility) { hasGit ? GitCommands.runGitUpstreamStatus(in: root) : .empty }.value
             let (statuses, commits, (branches, current), remotes, tags, stashes, currentOperation, upstream) = await (s, c, br, rm, tg, st, op, up)
             self.isGitRepo      = hasGit
             self.statuses       = statuses
@@ -226,7 +226,7 @@ final class GitStatusService {
         diff = ""; isLoadingDiff = true
         Task {
             let result = await Task.detached(priority: .utility) {
-                Self.diffOutput(for: relativePath, state: state, in: root)
+                GitCommands.diffOutput(for: relativePath, state: state, in: root)
             }.value
             guard requestID == self.diffRequestID, self.selectedDiffPath == relativePath else { return }
             self.diff = result
@@ -248,7 +248,7 @@ final class GitStatusService {
         isLoadingCommitDetail = true
         Task {
             let result = await Task.detached(priority: .utility) {
-                Self.commitDetail(for: commitID, in: root)
+                GitCommands.commitDetail(for: commitID, in: root)
             }.value
             guard requestID == self.commitDetailRequestID else { return }
             self.commitDetail = result
@@ -283,7 +283,7 @@ final class GitStatusService {
 
         Task {
             let result = await Task.detached(priority: .utility) {
-                Self.compareRefs(from: trimmedFrom, to: trimmedTo, in: root)
+                GitCommands.compareRefs(from: trimmedFrom, to: trimmedTo, in: root)
             }.value
             guard requestID == self.compareRequestID else { return }
             self.isLoadingCompareResult = false
@@ -315,7 +315,7 @@ final class GitStatusService {
         isBusy = true
         Task {
             let ok = await Task.detached(priority: .utility) {
-                Self.unstage(relativePath, state: state, in: root)
+                GitCommands.unstage(relativePath, state: state, in: root)
             }.value
             self.isBusy = false
             self.lastError = ok ? nil : "Unstage failed"
@@ -326,9 +326,9 @@ final class GitStatusService {
 
     func unstageAll(completion: @escaping (Bool, String) -> Void) {
         runGitOperation({ root in
-            let primary = Self.gitWithError(["restore", "--staged", "--", "."], in: root)
+            let primary = GitCommands.gitWithError(["restore", "--staged", "--", "."], in: root)
             if primary.0 != nil { return primary }
-            return Self.gitWithError(["reset", "HEAD", "--", "."], in: root)
+            return GitCommands.gitWithError(["reset", "HEAD", "--", "."], in: root)
         }, completion: completion)
     }
 
@@ -336,18 +336,18 @@ final class GitStatusService {
         guard let state = statuses[relativePath] else {
             completion(false, "No file selected"); return
         }
-        runGitOperation({ root in Self.discard(relativePath, state: state, in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.discard(relativePath, state: state, in: root) }, completion: completion)
     }
 
     func discardAll(completion: @escaping (Bool, String) -> Void) {
-        runGitOperation({ root in Self.discardAll(in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.discardAll(in: root) }, completion: completion)
     }
 
     func resolveConflict(_ relativePath: String, using strategy: GitConflictResolutionStrategy, completion: @escaping (Bool, String) -> Void) {
         guard conflictedPaths.contains(relativePath) else {
             completion(false, "Selected file is not in conflict"); return
         }
-        runGitOperation({ root in Self.resolveConflict(relativePath, using: strategy, in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.resolveConflict(relativePath, using: strategy, in: root) }, completion: completion)
     }
 
     func abortCurrentOperation(completion: @escaping (Bool, String) -> Void) {
@@ -360,7 +360,7 @@ final class GitStatusService {
         case .rebase:     args = ["rebase", "--abort"]
         case .cherryPick: args = ["cherry-pick", "--abort"]
         }
-        runGitOperation({ root in Self.gitWithError(args, in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(args, in: root) }, completion: completion)
     }
 
     func commit(message: String, completion: @escaping (Bool, String) -> Void) {
@@ -371,7 +371,7 @@ final class GitStatusService {
         isBusy = true
         Task {
             let out = await Task.detached(priority: .userInitiated) {
-                Self.git(["commit", "-m", message], in: root)
+                GitCommands.git(["commit", "-m", message], in: root)
             }.value
             let ok = out != nil
             self.isBusy = false; self.lastError = ok ? nil : "Commit failed"
@@ -387,20 +387,20 @@ final class GitStatusService {
         isBusy = true
         Task {
             let (_, addErr) = await Task.detached(priority: .userInitiated) {
-                Self.gitWithError(["add", "-A"], in: root)
+                GitCommands.gitWithError(["add", "-A"], in: root)
             }.value
             if addErr != nil {
                 self.isBusy = false
-                let message = Self.commandMessage(stdout: nil, stderr: addErr, fallback: "Stage all failed")
+                let message = GitCommands.commandMessage(stdout: nil, stderr: addErr, fallback: "Stage all failed")
                 self.lastError = message
                 completion(false, message)
                 return
             }
             let (out, err) = await Task.detached(priority: .userInitiated) {
-                Self.gitWithError(["commit", "-m", message], in: root)
+                GitCommands.gitWithError(["commit", "-m", message], in: root)
             }.value
             let ok = out != nil
-            let finalMessage = Self.commandMessage(stdout: out, stderr: err, fallback: ok ? "Committed" : "Commit failed")
+            let finalMessage = GitCommands.commandMessage(stdout: out, stderr: err, fallback: ok ? "Committed" : "Commit failed")
             self.isBusy = false
             self.lastError = ok ? nil : finalMessage
             self.refresh()
@@ -411,7 +411,7 @@ final class GitStatusService {
     func amendLastCommit(message: String, completion: @escaping (Bool, String) -> Void) {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let commandArgs = trimmed.isEmpty ? ["commit", "--amend", "--no-edit"] : ["commit", "--amend", "-m", trimmed]
-        runGitOperation({ root in Self.gitWithError(commandArgs, in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(commandArgs, in: root) }, completion: completion)
     }
 
     // MARK: Branches
@@ -428,7 +428,7 @@ final class GitStatusService {
         guard currentBranch != name else {
             completion(false, "Cannot merge a branch into itself"); return
         }
-        runGitOperation({ root in Self.gitWithError(["merge", "--no-edit", name], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["merge", "--no-edit", name], in: root) }, completion: completion)
     }
     func renameBranch(_ name: String, to newName: String, completion: @escaping (Bool, String) -> Void) {
         let trimmedOld = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -437,14 +437,14 @@ final class GitStatusService {
             completion(false, "Branch names cannot be empty"); return
         }
         let args = trimmedOld == currentBranch ? ["branch", "-m", trimmedNew] : ["branch", "-m", trimmedOld, trimmedNew]
-        runGitOperation({ root in Self.gitWithError(args, in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(args, in: root) }, completion: completion)
     }
 
     func deleteBranch(_ name: String, completion: @escaping (Bool, String) -> Void) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { completion(false, "No branch selected"); return }
         guard trimmed != currentBranch else { completion(false, "Cannot delete the current branch"); return }
-        runGitOperation({ root in Self.gitWithError(["branch", "-d", trimmed], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["branch", "-d", trimmed], in: root) }, completion: completion)
     }
 
     func checkoutRemoteBranch(_ name: String, completion: @escaping (Bool, String) -> Void) {
@@ -453,9 +453,9 @@ final class GitStatusService {
         let remoteRef = trimmed.hasPrefix("remotes/") ? String(trimmed.dropFirst("remotes/".count)) : trimmed
         runGitOperation({ root in
             let branchName = remoteRef.split(separator: "/").last.map(String.init) ?? remoteRef
-            let primary = Self.gitWithError(["switch", "--track", "-c", branchName, remoteRef], in: root)
+            let primary = GitCommands.gitWithError(["switch", "--track", "-c", branchName, remoteRef], in: root)
             if primary.0 != nil { return primary }
-            return Self.gitWithError(["checkout", "--track", remoteRef], in: root)
+            return GitCommands.gitWithError(["checkout", "--track", remoteRef], in: root)
         }, completion: completion)
     }
 
@@ -464,7 +464,7 @@ final class GitStatusService {
         guard !trimmed.isEmpty else { completion(false, "No branch selected"); return }
         guard !currentBranch.isEmpty else { completion(false, "No active branch"); return }
         guard trimmed != currentBranch else { completion(false, "Current branch is already \(trimmed)"); return }
-        runGitOperation({ root in Self.gitWithError(["rebase", trimmed], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["rebase", trimmed], in: root) }, completion: completion)
     }
 
     // MARK: History actions
@@ -472,7 +472,7 @@ final class GitStatusService {
     func cherryPickCommit(_ commitID: String, completion: @escaping (Bool, String) -> Void) {
         let trimmed = commitID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { completion(false, "No commit selected"); return }
-        runGitOperation({ root in Self.gitWithError(["cherry-pick", trimmed], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["cherry-pick", trimmed], in: root) }, completion: completion)
     }
 
     // MARK: Tags
@@ -485,19 +485,19 @@ final class GitStatusService {
         } else {
             ["tag", trimmed]
         }
-        runGitOperation({ root in Self.gitWithError(commandArgs, in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(commandArgs, in: root) }, completion: completion)
     }
 
     func deleteTag(_ name: String, completion: @escaping (Bool, String) -> Void) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { completion(false, "No tag selected"); return }
-        runGitOperation({ root in Self.gitWithError(["tag", "-d", trimmed], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["tag", "-d", trimmed], in: root) }, completion: completion)
     }
 
     func checkoutTag(_ name: String, completion: @escaping (Bool, String) -> Void) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { completion(false, "No tag selected"); return }
-        runGitOperation({ root in Self.gitWithError(["checkout", trimmed], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["checkout", trimmed], in: root) }, completion: completion)
     }
 
     // MARK: Stash
@@ -505,59 +505,59 @@ final class GitStatusService {
     func createStash(message: String, completion: @escaping (Bool, String) -> Void) {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let args = trimmed.isEmpty ? ["stash", "push", "--include-untracked"] : ["stash", "push", "--include-untracked", "-m", trimmed]
-        runGitOperation({ root in Self.gitWithError(args, in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(args, in: root) }, completion: completion)
     }
 
     func applyStash(_ reference: String, pop: Bool, completion: @escaping (Bool, String) -> Void) {
         let trimmed = reference.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { completion(false, "No stash selected"); return }
         let args = pop ? ["stash", "pop", trimmed] : ["stash", "apply", trimmed]
-        runGitOperation({ root in Self.gitWithError(args, in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(args, in: root) }, completion: completion)
     }
 
     func dropStash(_ reference: String, completion: @escaping (Bool, String) -> Void) {
         let trimmed = reference.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { completion(false, "No stash selected"); return }
-        runGitOperation({ root in Self.gitWithError(["stash", "drop", trimmed], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["stash", "drop", trimmed], in: root) }, completion: completion)
     }
 
     // MARK: Remotes
 
     func addRemote(name: String, url: String, completion: @escaping (Bool, String) -> Void) {
-        runGitOperation({ root in Self.gitWithError(["remote", "add", name, url], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["remote", "add", name, url], in: root) }, completion: completion)
     }
 
     func updateRemote(name: String, url: String, completion: @escaping (Bool, String) -> Void) {
-        runGitOperation({ root in Self.gitWithError(["remote", "set-url", name, url], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["remote", "set-url", name, url], in: root) }, completion: completion)
     }
 
     func removeRemote(name: String, completion: @escaping (Bool, String) -> Void) {
-        runGitOperation({ root in Self.gitWithError(["remote", "remove", name], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["remote", "remove", name], in: root) }, completion: completion)
     }
 
     func fetch(completion: @escaping (Bool, String) -> Void) {
-        runGitOperation({ root in Self.gitWithError(["fetch", "--all", "--prune"], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["fetch", "--all", "--prune"], in: root) }, completion: completion)
     }
 
     func pull(completion: @escaping (Bool, String) -> Void) {
         guard !upstreamBranch.isEmpty else { completion(false, "No upstream configured"); return }
-        runGitOperation({ root in Self.gitWithError(["pull", "--ff-only"], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["pull", "--ff-only"], in: root) }, completion: completion)
     }
 
     func push(completion: @escaping (Bool, String) -> Void) {
         guard !upstreamBranch.isEmpty else { completion(false, "No upstream. Publish first."); return }
-        runGitOperation({ root in Self.gitWithError(["push"], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["push"], in: root) }, completion: completion)
     }
 
     func publishCurrentBranch(completion: @escaping (Bool, String) -> Void) {
         guard !currentBranch.isEmpty else { completion(false, "No active branch"); return }
         guard let remoteName = preferredRemoteName else { completion(false, "Add a remote first"); return }
         let branch = currentBranch
-        runGitOperation({ root in Self.gitWithError(["push", "-u", remoteName, branch], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["push", "-u", remoteName, branch], in: root) }, completion: completion)
     }
 
     func initRepo(completion: @escaping (Bool, String) -> Void) {
-        runGitOperation({ root in Self.gitWithError(["init"], in: root) }, completion: completion)
+        runGitOperation({ root in GitCommands.gitWithError(["init"], in: root) }, completion: completion)
     }
 
     var preferredRemoteName: String? {
@@ -570,7 +570,7 @@ final class GitStatusService {
         guard let root = projectRoot else { return }
         isBusy = true
         Task {
-            _ = await Task.detached(priority: .utility) { Self.git(args, in: root) }.value
+            _ = await Task.detached(priority: .utility) { GitCommands.git(args, in: root) }.value
             self.isBusy = false; self.refresh()
             self.worktreeChangeToken &+= 1
             if let p = selectedDiffPath { self.loadDiff(for: p) }
@@ -586,7 +586,7 @@ final class GitStatusService {
         Task {
             let (out, err) = await Task.detached(priority: .utility) { operation(root) }.value
             let ok = out != nil
-            let message = Self.commandMessage(stdout: out, stderr: err, fallback: ok ? "Done" : "Git command failed")
+            let message = GitCommands.commandMessage(stdout: out, stderr: err, fallback: ok ? "Done" : "Git command failed")
             self.isBusy = false; self.lastError = ok ? nil : message
             self.refresh()
             self.worktreeChangeToken &+= 1
@@ -605,6 +605,15 @@ final class GitStatusService {
             }
         }
     }
+
+}
+
+// MARK: - Git command layer
+//
+// Pure, isolation-free git plumbing. Kept out of the `@Observable` GitStatusService
+// class so the class stays small enough for the Swift type-checker to resolve its
+// construction quickly (these static bodies otherwise dominate that cost).
+enum GitCommands {
 
     // MARK: Git binary (no sandbox - auto-detect from common paths or PATH)
 
@@ -667,7 +676,7 @@ final class GitStatusService {
         return (out, nil)
     }
 
-    nonisolated private static func gitOutput(_ args: [String], in root: URL, allowedExitCodes: Set<Int> = [0]) -> String? {
+    nonisolated static func gitOutput(_ args: [String], in root: URL, allowedExitCodes: Set<Int> = [0]) -> String? {
         let process = Process()
         process.executableURL    = URL(fileURLWithPath: gitPath)
         process.arguments        = args
@@ -682,7 +691,7 @@ final class GitStatusService {
         return String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
     }
 
-    nonisolated private static func gitEnvironment() -> [String: String] {
+    nonisolated static func gitEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         env["PATH"]                = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         env["HOME"]                = NSHomeDirectory()
@@ -694,7 +703,7 @@ final class GitStatusService {
 
     // MARK: Diff
 
-    nonisolated private static func diffOutput(for relativePath: String, state: GitFileState?, in root: URL) -> String {
+    nonisolated static func diffOutput(for relativePath: String, state: GitFileState?, in root: URL) -> String {
         var sections: [String] = []
 
         if state?.hasStagedChanges == true {
@@ -733,7 +742,7 @@ final class GitStatusService {
         return ""
     }
 
-    nonisolated private static func compareRefs(from fromRef: String, to toRef: String, in root: URL) -> (GitCompareResult?, String?) {
+    nonisolated static func compareRefs(from fromRef: String, to toRef: String, in root: URL) -> (GitCompareResult?, String?) {
         let diff = gitOutput(["diff", fromRef, toRef], in: root, allowedExitCodes: [0, 1])?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let rawFiles = gitOutput(["diff", "--name-status", fromRef, toRef], in: root, allowedExitCodes: [0, 1])?
@@ -755,7 +764,7 @@ final class GitStatusService {
         return (GitCompareResult(fromRef: fromRef, toRef: toRef, files: files, diff: diff), nil)
     }
 
-    nonisolated private static func commitDetail(for commitID: String, in root: URL) -> GitCommitDetail {
+    nonisolated static func commitDetail(for commitID: String, in root: URL) -> GitCommitDetail {
         let trimmedID = commitID.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = gitOutput(["show", "-s", "--format=%B", trimmedID], in: root)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -776,7 +785,7 @@ final class GitStatusService {
 
     // MARK: Unstage
 
-    nonisolated private static func unstage(_ relativePath: String, state: GitFileState?, in root: URL) -> Bool {
+    nonisolated static func unstage(_ relativePath: String, state: GitFileState?, in root: URL) -> Bool {
         if git(["restore", "--staged", "--", relativePath], in: root) != nil { return true }
         if case .added? = state?.status {
             return git(["rm", "--cached", "--", relativePath], in: root) != nil
@@ -784,7 +793,7 @@ final class GitStatusService {
         return false
     }
 
-    nonisolated private static func discard(_ relativePath: String, state: GitFileState, in root: URL) -> (String?, String?) {
+    nonisolated static func discard(_ relativePath: String, state: GitFileState, in root: URL) -> (String?, String?) {
         if case .added = state.status {
             _ = gitWithError(["restore", "--staged", "--", relativePath], in: root)
             _ = gitWithError(["rm", "-f", "--cached", "--", relativePath], in: root)
@@ -804,7 +813,7 @@ final class GitStatusService {
         return gitWithError(["checkout", "--", relativePath], in: root)
     }
 
-    nonisolated private static func discardAll(in root: URL) -> (String?, String?) {
+    nonisolated static func discardAll(in root: URL) -> (String?, String?) {
         let restore = gitWithError(["restore", "--source=HEAD", "--staged", "--worktree", "--", "."], in: root)
         if restore.0 == nil, let err = restore.1, !err.isEmpty {
             return restore
@@ -816,7 +825,7 @@ final class GitStatusService {
         return ("Discarded all local changes", nil)
     }
 
-    nonisolated private static func resolveConflict(_ relativePath: String, using strategy: GitConflictResolutionStrategy, in root: URL) -> (String?, String?) {
+    nonisolated static func resolveConflict(_ relativePath: String, using strategy: GitConflictResolutionStrategy, in root: URL) -> (String?, String?) {
         switch strategy {
         case .ours:
             let checkout = gitWithError(["checkout", "--ours", "--", relativePath], in: root)
@@ -848,7 +857,7 @@ final class GitStatusService {
         }
     }
 
-    nonisolated private static func acceptBothConflicts(in content: String) -> String? {
+    nonisolated static func acceptBothConflicts(in content: String) -> String? {
         let hadTrailingNewline = content.hasSuffix("\n")
         let lines = content.components(separatedBy: "\n")
         var output: [String] = []
@@ -894,7 +903,7 @@ final class GitStatusService {
 
     // MARK: Message formatting
 
-    nonisolated private static func commandMessage(stdout: String?, stderr: String?, fallback: String) -> String {
+    nonisolated static func commandMessage(stdout: String?, stderr: String?, fallback: String) -> String {
         let out = stdout?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !out.isEmpty { return out }
         let err = (stderr ?? "")
@@ -973,7 +982,7 @@ final class GitStatusService {
         }
     }
 
-    nonisolated private static func runGitOperationState(in root: URL) -> GitRepositoryOperation? {
+    nonisolated static func runGitOperationState(in root: URL) -> GitRepositoryOperation? {
         guard let gitDirText = gitOutput(["rev-parse", "--git-dir"], in: root)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !gitDirText.isEmpty else { return nil }
@@ -999,7 +1008,7 @@ final class GitStatusService {
         return nil
     }
 
-    nonisolated private static func runGitUpstreamStatus(in root: URL) -> GitUpstreamStatus {
+    fileprivate nonisolated static func runGitUpstreamStatus(in root: URL) -> GitUpstreamStatus {
         let upstream = git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], in: root)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !upstream.isEmpty else { return .empty }
@@ -1013,7 +1022,7 @@ final class GitStatusService {
         )
     }
 
-    nonisolated private static func runGitStatus(in root: URL) -> [String: GitFileState] {
+    nonisolated static func runGitStatus(in root: URL) -> [String: GitFileState] {
         guard let output = git(["status", "--porcelain", "-u"], in: root) else { return [:] }
         var result: [String: GitFileState] = [:]
         for line in output.components(separatedBy: "\n") {
@@ -1038,7 +1047,7 @@ final class GitStatusService {
 
     /// Strips surrounding double-quotes that git adds for paths containing spaces or
     /// non-ASCII characters, and unescapes C-style escape sequences (\\, \", \n, \t, \NNN).
-    nonisolated private static func gitUnquotePath(_ s: String) -> String {
+    nonisolated static func gitUnquotePath(_ s: String) -> String {
         guard s.hasPrefix("\"") && s.hasSuffix("\"") && s.count >= 2 else { return s }
         let chars = Array(s.dropFirst().dropLast())
         var result = ""
@@ -1079,7 +1088,7 @@ final class GitStatusService {
         return result
     }
 
-    nonisolated private static func fileStatus(for index: Character, workTree: Character) -> GitFileStatus {
+    nonisolated static func fileStatus(for index: Character, workTree: Character) -> GitFileStatus {
         switch (index, workTree) {
         case ("?", "?"):                              return .added
         case ("A", _), (_, "A"):                     return .added

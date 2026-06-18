@@ -84,7 +84,7 @@ struct GitPanelView: View {
         initStatus = nil
         Task {
             let (out, err) = await Task.detached(priority: .utility) {
-                GitStatusService.gitWithError(["init"], in: self.projectURL)
+                GitCommands.gitWithError(["init"], in: self.projectURL)
             }.value
             initRunning = false
             if let out {
