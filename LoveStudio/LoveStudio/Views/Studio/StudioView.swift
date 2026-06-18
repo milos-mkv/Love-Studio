@@ -1236,20 +1236,26 @@ private struct TabItemView: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            // File type icon - SVG from bundle, fallback to SF Symbol
-            if tab.url.lastPathComponent == "conf.lua" {
-                Image(systemName: "gearshape.2.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(red: 1.0, green: 0.28, blue: 0.58))
-                    .frame(width: 13, height: 13)
-            } else {
-                FileIconView(ext: tab.url.pathExtension.lowercased(), size: 13)
-            }
+            Button(action: onSelect) {
+                HStack(spacing: 5) {
+                    // File type icon - SVG from bundle, fallback to SF Symbol
+                    if tab.url.lastPathComponent == "conf.lua" {
+                        Image(systemName: "gearshape.2.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(red: 1.0, green: 0.28, blue: 0.58))
+                            .frame(width: 13, height: 13)
+                    } else {
+                        FileIconView(ext: tab.url.pathExtension.lowercased(), size: 13)
+                    }
 
-            Text(tab.name)
-                .font(.system(size: 11.5, weight: isActive ? .medium : .regular))
-                .foregroundStyle(isActive ? .primary : .secondary)
-                .lineLimit(1)
+                    Text(tab.name)
+                        .font(.system(size: 11.5, weight: isActive ? .medium : .regular))
+                        .foregroundStyle(isActive ? .primary : .secondary)
+                        .lineLimit(1)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
             // Close / dirty indicator
             ZStack {
@@ -1297,8 +1303,6 @@ private struct TabItemView: View {
                 }
             }
         )
-        .contentShape(Rectangle())
-        .onTapGesture { onSelect() }
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(Color(NSColor.separatorColor))

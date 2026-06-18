@@ -148,5 +148,18 @@ struct LoveStudioApp: App {
         Settings {
             SettingsView()
         }
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                NewWindowCommand()
+            }
+        }
+    }
+}
+
+private struct NewWindowCommand: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Button("New Window") { openWindow(id: "welcome") }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
     }
 }
